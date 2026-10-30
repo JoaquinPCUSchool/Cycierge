@@ -1,0 +1,33 @@
+pip3 install mysql-connector
+sudo apt-get update
+sudo apt-get install mariadb-server
+
+
+
+sudo mysql -uroot
+password: 12345678
+
+mysql -u root -p
+password: 12345678
+
+# creating database
+mysql> CREATE DATABASE nameDB;
+mysql> USE nameDB;
+
+## creating user for database
+CREATE USER 'user'@'localhost' IDENTIFIED BY 'password';
+
+# grants all privileges
+mysql> GRANT ALL PRIVILEGES ON nameDB.* TO 'user'@'localhost';
+;mysql> FLUSH PRIVILEGES;
+mysql> quit
+
+
+
+## *******************************
+# LOGING the new user 
+mysql -u user -p
+passwrd: password
+
+# creating table
+CREATE TABLE TBLUSER(ID int NOT NULL AUTO_INCREMENT PRIMARY KEY, NAME TEXT);
