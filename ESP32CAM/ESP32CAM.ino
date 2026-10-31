@@ -1,10 +1,18 @@
+// esp camera
+
 #include "esp_camera.h"
 #include "img_converters.h"
 #include <WiFi.h>
 #include <WebServer.h>
 
-IPAddress local_IP(192, 168, 5, 72);
-IPAddress gateway(192, 168, 5, 1);
+
+//        TENANT  RPI   ADMIN
+//ROOM 1: 111     112   113
+//ROOM 2: 121     122   123     
+
+
+IPAddress local_IP(192, 168, 0, 123);
+IPAddress gateway(192, 168, 0, 1);
 IPAddress subnet(255, 255, 255, 0);
 IPAddress primaryDNS(8, 8, 8, 8);
 

@@ -1,3 +1,5 @@
+// esp32 (not camera)
+
 #include <WiFi.h>
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
@@ -5,7 +7,7 @@
 #define RXD2 26
 #define TXD2 27
 
-String ipVar = "192.168.5.45";
+String ipVar = "192.168.0.100";
 String roomID = "2";
 
 int voltage;
