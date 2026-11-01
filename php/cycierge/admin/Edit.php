@@ -73,7 +73,9 @@
 			if ($conn->connect_error) {
 				die("Connection failed: " . $conn->connect_error);
 			}
-			$stmt = $conn->prepare("UPDATE TBLUSER SET USERNAME = '" . $unamevar . "', USERID = '". $uidvar ."', USERPASS = '". $upassvar ."' WHERE ID = '".$_SESSION["userflag"]."'");
+			$stmt = $conn->prepare("UPDATE TBLUSER SET USERNAME = ?, USERID = ?, USERPASS = ? WHERE ID = ?");
+			$flag = (int)$_SESSION["userflag"];
+			$stmt->bind_param("sssi", $unamevar, $uidvar, $upassvar, $flag);
 			$stmt->execute();
 
 
@@ -87,17 +89,17 @@
 		<form method="post" action="Edit.php">
 			<label>Name:
 				<input type="text" name="namevar" 
-				       value="<?php echo $name ?>">
+				       value="<?php echo htmlspecialchars($name ?? '', ENT_QUOTES); ?>">
 			</label>
 
 			<label>Id:
 				<input type="text" name="idvar" 
-				       value="<?php echo $id ?>">
+				       value="<?php echo htmlspecialchars($id ?? '', ENT_QUOTES); ?>">
 			</label>
 
 			<label>Password:
 				<input type="text" name="passvar" 
-				       value="<?php echo $pass ?>">
+				       value="<?php echo htmlspecialchars($pass ?? '', ENT_QUOTES); ?>">
 			</label>
 			
 			<form method="POST" action="#">
