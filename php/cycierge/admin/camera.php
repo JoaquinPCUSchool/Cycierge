@@ -1,9 +1,5 @@
 <?php
-	session_start();
-	if (empty($_SESSION["adminid"])) {
-		echo '<script>alert("Please Login First");
-			 window.location.href="adminlogin.php";</script>';
-	}
+    require __DIR__ . '/auth.php';
 ?>
 
 

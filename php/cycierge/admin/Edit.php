@@ -1,9 +1,6 @@
 <?php
-	session_start();
-	if (empty($_SESSION["userflag"])) {
-		echo '<script>alert("Ask Admin to Login..");
-			 window.location.href="userlogin.php";</script>';
-	}
+    require __DIR__ . '/auth.php';
+    if (empty($_SESSION["userflag"])) { header('Location: admin.php'); exit; }
 ?>
 <html>
 <head>
