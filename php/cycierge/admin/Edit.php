@@ -73,9 +73,10 @@
 			if ($conn->connect_error) {
 				die("Connection failed: " . $conn->connect_error);
 			}
-			$stmt = $conn->prepare("UPDATE TBLUSER SET USERNAME = ?, USERID = ?, USERPASS = ? WHERE ID = ?");
+			$stmt = $conn->prepare("UPDATE TBLUSER SET USERNAME = ?, USERID = ?, USERPASS = COALESCE(?, USERPASS) WHERE ID = ?");
+			$newhash = ($upassvar === '') ? null : password_hash($upassvar, PASSWORD_DEFAULT);
 			$flag = (int)$_SESSION["userflag"];
-			$stmt->bind_param("sssi", $unamevar, $uidvar, $upassvar, $flag);
+			$stmt->bind_param("sssi", $unamevar, $uidvar, $newhash, $flag);
 			$stmt->execute();
 
 
@@ -98,8 +99,7 @@
 			</label>
 
 			<label>Password:
-				<input type="text" name="passvar" 
-				       value="<?php echo htmlspecialchars($pass ?? '', ENT_QUOTES); ?>">
+				<input type="password" name="passvar" value="" placeholder="leave blank to keep current" autocomplete="new-password">
 			</label>
 			
 			<form method="POST" action="#">

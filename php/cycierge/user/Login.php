@@ -47,7 +47,8 @@
 		    while ($row = $result->fetch_assoc()) {
 				//echo "ID: " . $row["ID"] . "<br>";
 
-				if ($uname == $row["USERID"] and $upass == $row["USERPASS"]) {
+				if (hash_equals((string)$row["USERID"], (string)$uname) && password_verify((string)$upass, (string)$row["USERPASS"])) {
+					session_regenerate_id(true);
 					$_SESSION["userid"] = $uname;
 
 					if ($row["ID"] == "1") {
