@@ -1,4 +1,4 @@
-<?php
+<?php require_once '/etc/cycierge/config.php';
    session_start();
    $_SESSION["adminid"] = "";
 ?>
@@ -21,7 +21,8 @@
 			$uname = $_POST['usernamevar'];
 			$upass = $_POST['userpassvar'];
 
-			if ($uname == "Admin" and $upass =="Admin" ) {
+			if (hash_equals(ADMIN_USER, (string)$uname) && password_verify((string)$upass, ADMIN_HASH)) {
+				session_regenerate_id(true);
 				$_SESSION["adminid"] = "Admin";
 				header('Location: admin.php');
 				exit;

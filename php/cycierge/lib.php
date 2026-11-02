@@ -1,7 +1,7 @@
-<?php
+<?php require_once '/etc/cycierge/config.php';
 // Shared helpers for the machine endpoints.
 function db() {
-    $conn = new mysqli("localhost", "USER", "12345678", "MYDB");
+    $conn = new mysqli("localhost", DB_USER, DB_PASS, DB_NAME);
     if ($conn->connect_error) { http_response_code(500); exit("Connection failed"); }
     return $conn;
 }

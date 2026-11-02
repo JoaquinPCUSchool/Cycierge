@@ -1,4 +1,4 @@
-<?php
+<?php require_once '/etc/cycierge/config.php';
     require __DIR__ . '/auth.php';
 ?>
 
@@ -61,9 +61,9 @@
 		if (isset($_POST['btnunlock'])) {
 
 			$host = "localhost";
-			$username = "USER";
-			$password = "12345678";
-			$database = "MYDB";
+			$username = DB_USER;
+			$password = DB_PASS;
+			$database = DB_NAME;
 
 			// Connect to MySQL
 			$conn = new mysqli($host, $username, $password, $database);
@@ -110,9 +110,9 @@
 	<?php
 
 		$host = "localhost";
-		$username = "USER";
-		$password = "12345678";
-		$database = "MYDB";
+		$username = DB_USER;
+		$password = DB_PASS;
+		$database = DB_NAME;
 
 		// Connect to MySQL
 		$conn = new mysqli($host, $username, $password, $database);
@@ -182,9 +182,9 @@
 
 	<?php
 		$host = "localhost";
-		$username = "USER";
-		$password = "12345678";
-		$database = "MYDB";
+		$username = DB_USER;
+		$password = DB_PASS;
+		$database = DB_NAME;
 
 		// Connect to MySQL
 		$conn = new mysqli($host, $username, $password, $database);

@@ -1,4 +1,4 @@
-<?php
+<?php require_once '/etc/cycierge/config.php';
 	session_start();
 	if (empty($_SESSION["adminid"])) {
 		echo '<script>alert("Please Login First");
@@ -97,9 +97,9 @@
 
 	<?php
 		$host = "localhost";
-		$username = "USER";
-		$password = "12345678";
-		$database = "MYDB";
+		$username = DB_USER;
+		$password = DB_PASS;
+		$database = DB_NAME;
 
 		// Connect to MySQL
 		$conn = new mysqli($host, $username, $password, $database);
@@ -168,7 +168,7 @@
 		<?php
 			if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST["delete_all"])) {
 				$conn = new mysqli($host, $username, $password, $database);
-				$conn = mysqli_connect("localhost", "USER", "12345678", "MYDB");
+				$conn = mysqli_connect("localhost", DB_USER, DB_PASS, DB_NAME);
 				$id = $_SESSION["userflag"]; // Get ID from URL or form
 				$sql = "DELETE FROM TBLLOGS WHERE LOGSID = $id";
 				mysqli_query($conn, $sql);
