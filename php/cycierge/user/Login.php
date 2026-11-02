@@ -1,4 +1,4 @@
-<?php require_once '/etc/cycierge/config.php';
+<?php require_once __DIR__ . '/../throttle.php'; require_once '/etc/cycierge/config.php';
    session_start();
    $_SESSION["userid"] = "";
    $_SESSION["usernum"] = "";
@@ -22,6 +22,7 @@
 
 		$uname = $_POST['usernamevar'];
 		$upass = $_POST['userpassvar'];
+        $blocked = login_blocked($uname);
 
 
 		$host = "localhost";
@@ -42,7 +43,9 @@
 		$result = $conn->query($sql);
 
 		// Print each row
-		if ($result->num_rows > 0) {
+		if ($blocked) {
+            echo '<script type="text/javascript"> alert("Too many failed attempts. Try again in 10 minutes."); </script>';
+        } elseif ($result->num_rows > 0) {
 
 		    while ($row = $result->fetch_assoc()) {
 				//echo "ID: " . $row["ID"] . "<br>";
@@ -57,7 +60,8 @@
 					if ($row["ID"] == "2") {
 						$_SESSION["usernum"] = "2";	
 					}
-					header('Location: user.php');
+					login_ok($uname);
+                    header('Location: user.php');
 					exit;
 					
 				} 
@@ -65,9 +69,10 @@
 					echo '<script type="text/javascript"> myFunction(); </script>';
 				}
 		    }
+            login_failed($uname);
 
-		} else {
-		    echo "No data found.";
+        } else {
+            echo "No data found.";
 		}
 
 		$conn->close();

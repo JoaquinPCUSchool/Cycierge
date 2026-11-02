@@ -1,4 +1,4 @@
-<?php require_once '/etc/cycierge/config.php';
+<?php require_once __DIR__ . '/../throttle.php'; require_once '/etc/cycierge/config.php';
    session_start();
    $_SESSION["adminid"] = "";
 ?>
@@ -21,13 +21,17 @@
 			$uname = $_POST['usernamevar'];
 			$upass = $_POST['userpassvar'];
 
-			if (hash_equals(ADMIN_USER, (string)$uname) && password_verify((string)$upass, ADMIN_HASH)) {
+			if (login_blocked($uname)) {
+				echo '<script type="text/javascript"> alert("Too many failed attempts. Try again in 10 minutes."); </script>';
+			} elseif (hash_equals(ADMIN_USER, (string)$uname) && password_verify((string)$upass, ADMIN_HASH)) {
+				login_ok($uname);
 				session_regenerate_id(true);
 				$_SESSION["adminid"] = "Admin";
 				header('Location: admin.php');
 				exit;
 			}
 			else {
+				login_failed($uname);
 				echo '<script type="text/javascript"> myFunction(); </script>';
 			}		
 			
