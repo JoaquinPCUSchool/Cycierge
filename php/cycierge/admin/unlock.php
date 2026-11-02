@@ -1,24 +1,8 @@
 <?php
-	$servername="localhost";
-	$username="USER";
-	$password="12345678";
-	$dbname="MYDB";
-	
-	$conn = new mysqli($servername, $username, $password, $dbname);
-	
-	if ($conn->connect_error) {
-		die("Connection failed : " .$conn->connect_error);
-	}
-
-	$sql = "UPDATE TBLUSER SET  
-		USERLOCK=" .$_GET["USERLOCK"]. " 
-		WHERE ID=" .$_GET["ID"]. " ;";
-       
-	if ($conn->query($sql) === TRUE) {
-		echo "Record updated successfully";
-		
-	} else {
-		echo "Error updaterecord: " .$conn->error;
-	}
-	$conn->close();
-?>
+require __DIR__ . '/../lib.php';
+$lock = (int) arg("USERLOCK") === 1 ? 1 : 0;
+$id   = (int) arg("ID");
+$conn = db();
+$stmt = $conn->prepare("UPDATE TBLUSER SET USERLOCK = ? WHERE ID = ?");
+echo $stmt->execute([$lock, $id]) ? "Record updated successfully" : "Error updaterecord: " . $stmt->error;
+$conn->close();
