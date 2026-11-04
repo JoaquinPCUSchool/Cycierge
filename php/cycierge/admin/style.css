@@ -1,66 +1,72 @@
-/*style.css*/
-body {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-family: sans-serif;
-    line-height: 1.5;
-    min-height: 100vh;
-    background: #3B93AD;
-    flex-direction: column;
-    margin: 0;
-}
+/* CyCierge shared theme (user + admin). Palette sampled from the brand banner. */
+:root{--bg:#296b79;--deep:#1d4f5b;--accent:#3b93ad;--indigo:#3b559f;--mint:#b7fef6;--ice:#e2eff3;--line:#6ac3d2;}
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  font-family:system-ui,"Segoe UI",Roboto,Arial,sans-serif;line-height:1.4;background:var(--bg);color:var(--mint)}
+body.top{justify-content:flex-start}
 
-.main {
-    background-color: #fff;
-    border-radius: 15px;
-    box-shadow: 0 0 20px rgba(0, 0, 0, 0.2);
-    padding: 10px 20px;
-    transition: transform 0.2s;
-    max-width: 100%;
-    text-align: center;
-	padding: 15px;
-}
+/* ---- legacy light card (admin pages still use .main / label / input / button) ---- */
+.main{background:var(--ice);color:var(--deep);border-radius:16px;box-shadow:0 6px 24px rgba(0,0,0,.25);
+  padding:18px;margin:12px;width:min(94vw,640px);text-align:center}
+.main h1,.main h2,.main h3{color:var(--bg)}
+label{display:block;width:100%;margin:10px 0 4px;text-align:left;color:var(--bg);font-weight:700}
+input{display:block;width:100%;margin-bottom:14px;padding:11px;border:1px solid #b9d3da;border-radius:8px;font-size:16px}
+button{padding:14px;border-radius:12px;margin:8px 0;border:0;background:var(--bg);color:var(--mint);width:70%;font-size:16px;cursor:pointer}
+.wrap{display:flex;justify-content:center;align-items:center}
 
-h1 {
-    color: #3B93AD;
-}
+/* ---- login ---- */
+.login{width:100%;max-width:380px;padding:56px 28px 32px;text-align:center}
+.brand{font-size:56px;font-weight:800;letter-spacing:-1px;margin:0;color:var(--mint)}
+.tag{margin:4px 0 0;color:var(--line);font-size:12px;letter-spacing:2px;text-transform:uppercase}
+.rule{height:4px;width:140px;margin:12px auto 48px;border-radius:2px;background:linear-gradient(90deg,var(--accent) 70%,var(--indigo) 70%)}
+.login h2{margin:0 0 12px;font-size:18px}
+.login label{color:var(--mint);font-size:13px;font-weight:600}
+.login input{background:var(--ice);color:var(--deep);border:0}
+.remember{display:flex;align-items:center;justify-content:center;gap:8px;margin:2px 0 18px;font-size:14px}
+.remember input{width:18px;height:18px;margin:0}
+.err{background:rgba(255,157,138,.18);border:1px solid #ff9d8a;color:#ffd0c7;border-radius:10px;padding:8px 12px;margin-bottom:14px;font-size:14px}
+.pill{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;margin:0;padding:12px 16px;border:0;border-radius:999px;
+  background:var(--mint);color:var(--deep);font-weight:700;font-size:16px;cursor:pointer}
+.pill:disabled{opacity:.6;cursor:default}
 
-label {
-    display: block;
-    width: 100%;
-    margin-top: 10px;
-    margin-bottom: 5px;
-    text-align: left;
-    color: #3B93AD;
-    font-weight: bold;
-}
+/* ---- tenant home ---- */
+.app{width:100%;max-width:440px;min-height:100vh;display:flex;flex-direction:column}
+.bar{background:var(--deep);border-bottom:2px solid var(--accent);padding:14px 18px;text-align:right;font-weight:800;letter-spacing:.3px}
+.page{padding:18px;flex:1}
+.page h1{margin:4px 0 16px;font-size:28px;text-align:left;color:var(--mint)}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.tile{display:flex;flex-direction:column;justify-content:space-between;gap:10px;min-height:140px;padding:14px;border-radius:16px;
+  background:rgba(255,255,255,.08);border:1px solid rgba(106,195,210,.35);color:var(--mint);text-decoration:none}
+.tile.cam{align-items:center;justify-content:center;background:var(--indigo);border-color:transparent}
+.tile.lock{background:var(--accent);border-color:transparent;color:#fff}
+.tile.lock .pill{background:rgba(255,255,255,.9)}
+.who{display:flex;align-items:center;gap:8px;font-weight:700;word-break:break-word}
+.stay small{display:block;font-size:12px;color:var(--line)}
+.stay b{display:block;font-size:24px;line-height:1.2}
+.ic{width:22px;height:22px;flex:none;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.ic.big{width:56px;height:56px;stroke-width:1.6}
+.state{display:flex;align-items:center;gap:8px;font-weight:700;font-size:18px}
+.batt{display:flex;align-items:center;justify-content:space-between;gap:10px;font-weight:700;font-size:13px}
+.batt b{display:block;font-size:22px}
+.cell{position:relative;display:flex;align-items:flex-end;width:34px;height:64px;padding:3px;border:3px solid var(--mint);border-radius:7px}
+.cell:before{content:"";position:absolute;top:-8px;left:50%;width:12px;height:5px;margin-left:-6px;border-radius:2px;background:var(--mint)}
+.cell i{display:block;width:100%;border-radius:2px;background:var(--mint)}
+.cell.low{border-color:#ff9d8a}.cell.low i{background:#ff9d8a}.cell.low:before{background:#ff9d8a}
+.logs h2{margin:22px 0 8px;font-size:15px;text-align:center}
+.loglist{max-height:320px;overflow-y:auto;padding:8px;border-radius:14px;background:rgba(0,0,0,.18)}
+.log{margin-bottom:8px;padding:10px 12px;border-radius:10px;background:rgba(255,255,255,.1)}
+.log:last-child{margin-bottom:0}
+.log b{display:block;font-size:14px}
+.log span{font-size:12px;color:var(--line)}
+.empty{padding:14px;text-align:center;color:var(--line);font-size:14px}
 
-input {
-    display: block;
-    width: 100%;
-    margin-bottom: 15px;
-    padding: 10px;
-    box-sizing: border-box;
-    border: 1px solid #ddd;
-    border-radius: 5px;
-}
-
-button {
-    padding: 15px;
-    border-radius: 10px;
-    margin-top: 15px;
-    margin-bottom: 15px;
-    border: none;
-    color: white;
-    cursor: pointer;
-    background-color: #3B93AD;
-    width: 70%;
-    font-size: 16px;
-}
-
-.wrap {
-    display: flex;
-    justify-content: center;
-    align-items: center;
-}
+/* ---- livestream ---- */
+.live{position:fixed;inset:0;display:flex;flex-direction:column;background:#0f2a30}
+.stage{position:relative;flex:1;min-height:0}
+.stage img{width:100%;height:100%;object-fit:contain;display:block}
+.clock{position:absolute;top:14px;right:18px;font-size:22px;font-weight:700;text-shadow:0 1px 4px #000}
+.offline{position:absolute;inset:0;display:none;align-items:center;justify-content:center;color:var(--line);font-size:16px}
+.overlay{position:absolute;left:18px;right:18px;bottom:36px;display:flex;justify-content:space-between;font-size:13px;text-shadow:0 1px 4px #000}
+.foot{position:relative;display:flex;justify-content:flex-end;align-items:center;min-height:64px;padding:14px 18px;background:var(--deep);border-top:2px solid var(--accent);font-weight:800}
+.back{position:absolute;left:50%;top:-30px;transform:translateX(-50%);display:flex;align-items:center;justify-content:center;width:56px;height:56px;
+  margin:0;padding:0;border-radius:50%;background:var(--mint);color:var(--deep);box-shadow:0 4px 12px rgba(0,0,0,.4)}

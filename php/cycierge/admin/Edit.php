@@ -1,9 +1,6 @@
-<?php
-	session_start();
-	if (empty($_SESSION["userflag"])) {
-		echo '<script>alert("Ask Admin to Login..");
-			 window.location.href="userlogin.php";</script>';
-	}
+<?php require_once '/etc/cycierge/config.php';
+    require __DIR__ . '/auth.php';
+    if (empty($_SESSION["userflag"])) { header('Location: admin.php'); exit; }
 ?>
 <html>
 <head>
@@ -14,9 +11,9 @@
 
 	<?php
 		$host = "localhost";
-		$username = "USER";
-		$password = "12345678";
-		$database = "MYDB";
+		$username = DB_USER;
+		$password = DB_PASS;
+		$database = DB_NAME;
 
 		// Connect to MySQL
 		$conn = new mysqli($host, $username, $password, $database);
@@ -65,9 +62,9 @@
 			$upassvar = $_POST['passvar'];
 
 			$host = "localhost";
-			$username = "USER";
-			$password = "12345678";
-			$database = "MYDB";
+			$username = DB_USER;
+			$password = DB_PASS;
+			$database = DB_NAME;
 
 			// Connect to MySQL
 			$conn = new mysqli($host, $username, $password, $database);
@@ -76,7 +73,10 @@
 			if ($conn->connect_error) {
 				die("Connection failed: " . $conn->connect_error);
 			}
-			$stmt = $conn->prepare("UPDATE TBLUSER SET USERNAME = '" . $unamevar . "', USERID = '". $uidvar ."', USERPASS = '". $upassvar ."' WHERE ID = '".$_SESSION["userflag"]."'");
+			$stmt = $conn->prepare("UPDATE TBLUSER SET USERNAME = ?, USERID = ?, USERPASS = COALESCE(?, USERPASS) WHERE ID = ?");
+			$newhash = ($upassvar === '') ? null : password_hash($upassvar, PASSWORD_DEFAULT);
+			$flag = (int)$_SESSION["userflag"];
+			$stmt->bind_param("sssi", $unamevar, $uidvar, $newhash, $flag);
 			$stmt->execute();
 
 
@@ -90,17 +90,16 @@
 		<form method="post" action="Edit.php">
 			<label>Name:
 				<input type="text" name="namevar" 
-				       value="<?php echo $name ?>">
+				       value="<?php echo htmlspecialchars($name ?? '', ENT_QUOTES); ?>">
 			</label>
 
 			<label>Id:
 				<input type="text" name="idvar" 
-				       value="<?php echo $id ?>">
+				       value="<?php echo htmlspecialchars($id ?? '', ENT_QUOTES); ?>">
 			</label>
 
 			<label>Password:
-				<input type="text" name="passvar" 
-				       value="<?php echo $pass ?>">
+				<input type="password" name="passvar" value="" placeholder="leave blank to keep current" autocomplete="new-password">
 			</label>
 			
 			<form method="POST" action="#">

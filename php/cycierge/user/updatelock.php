@@ -1,10 +1,10 @@
 
-<?php
+<?php require_once '/etc/cycierge/config.php';
 header('Content-Type: application/json');
 
 $data = json_decode(file_get_contents("php://input"), true);
 
-$conn = new mysqli("localhost", "USER", "12345678", "MYDB");
+$conn = new mysqli("localhost", DB_USER, DB_PASS, DB_NAME);
 
 if ($conn->connect_error) {
     die(json_encode(["success" => false, "message" => "DB connection failed"]));

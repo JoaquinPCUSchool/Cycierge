@@ -1,235 +1,112 @@
-<?php
-	session_start();
-	if (empty($_SESSION["userid"])) {
-		echo '<script>alert("Please Login First");
-			 window.location.href="Login.php";</script>';
-	}
-?>
+<?php require_once '/etc/cycierge/config.php';
+require __DIR__ . '/auth.php';   // Pi's shared session check + DB config constants
+function cy_h($s) { return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); }
 
-<?php
-	// Refreshes the current page every 5 seconds
-	header("Refresh: 25");
-?>
+$tz  = new DateTimeZone('Asia/Manila');
+$uid = (int)$_SESSION["usernum"];
 
+$conn = new mysqli("localhost", DB_USER, DB_PASS, DB_NAME);
+if ($conn->connect_error) { die("Connection failed: " . $conn->connect_error); }
+
+// Unlock: same DB writes as before, then redirect so a page refresh can't re-unlock / double-log.
+if (isset($_POST['btnunlock'])) {
+	$now = new DateTime('now', $tz);
+	$d = $now->format('Y-m-d');
+	$t = $now->format('H:i:s');
+	$lid = (string)$uid;
+	$act = "User" . $uid . " Unlock Door";
+
+	$stmt = $conn->prepare("UPDATE TBLUSER SET USERLOCK = '1' WHERE ID = ?");
+	$stmt->bind_param("i", $uid);
+	$stmt->execute();
+
+	$stmt = $conn->prepare("INSERT INTO TBLLOGS (LOGSID, LOGSDATE, LOGSTIME, LOGSACTIVITY) VALUES (?, ?, ?, ?)");
+	$stmt->bind_param("ssss", $lid, $d, $t, $act);
+	$stmt->execute();
+	header('Location: user.php');
+	exit;
+}
+header("Refresh: 25");
+
+$stmt = $conn->prepare("SELECT USERNAME, USERBATT, USERLOCK, USERDATE, USERTIME FROM TBLUSER WHERE ID = ?");
+$stmt->bind_param("i", $uid);
+$stmt->execute();
+$u = $stmt->get_result()->fetch_assoc() ?: [];
+
+$name      = $u["USERNAME"] ?? "Tenant";
+$batt      = max(0, min(100, (int)($u["USERBATT"] ?? 0)));
+$unlocking = (($u["USERLOCK"] ?? "0") == "1");   // 1 = unlock requested, ESP32 resets it to 0
+
+// Time stayed (counts UP from check-in, as the code always did)
+$days = "-"; $rest = "";
+try {
+	$iv   = (new DateTime(($u["USERDATE"] ?? "") . " " . ($u["USERTIME"] ?? ""), $tz))->diff(new DateTime('now', $tz));
+	$days = $iv->days . ($iv->days == 1 ? " day" : " days");
+	$rest = $iv->format('%h hr %i min');
+} catch (Exception $e) {}
+
+// Logs for THIS room only, newest first
+$lid = (string)$uid;
+$stmt = $conn->prepare("SELECT LOGSDATE, LOGSTIME, LOGSACTIVITY FROM TBLLOGS WHERE LOGSID = ? ORDER BY LOGSDATE DESC, LOGSTIME DESC LIMIT 30");
+$stmt->bind_param("s", $lid);
+$stmt->execute();
+$logs = $stmt->get_result();
+$conn->close();
+?>
 <!DOCTYPE html>
 <html>
-
 <head>
+	<meta charset="UTF-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta charset="UTF-8">
+	<title>Room | <?php echo $uid; ?></title>
 	<link rel="stylesheet" href="style.css">
-
-	
-	<?php
-		if ($_SESSION["usernum"] == "1") {
-			echo "<title>Room | 1</title>";
-		}
-		else {
-			echo "<title>Room | 2</title>";
-		}
-	?>
-    
-
-	<style>
-		table {
-		  font-family: arial, sans-serif;
-		  border-collapse: collapse;
-		  width: 100%;
-		}
-
-		td{
-		  border: 1px solid #3B93AD;
-		  text-align: left;
-		  padding: 8px;
-		}
-
-		th {
-		  border: 1px solid #3B93AD;
-		  text-align: left;
-		  padding: 8px;
-		  background-color: #3B93AD;
-		}	
-
-
-		tr:nth-child(even) {
-		  background-color: #dddddd;
-		}
-	</style>
-
-
 </head>
+<body class="top">
+<div class="app">
+	<div class="bar">CyCierge</div>
+	<div class="page">
+		<h1>Room no. <?php echo $uid; ?></h1>
 
-<body>
+		<div class="grid">
+			<div class="tile">
+				<div class="who">
+					<svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-7 8-7s8 3 8 7"/></svg>
+					<?php echo cy_h($name); ?>
+				</div>
+				<div class="stay"><small>Time stayed</small><b><?php echo cy_h($days); ?></b><small><?php echo cy_h($rest); ?></small></div>
+			</div>
 
-	<?php
-		if (isset($_POST['btnunlock'])) {
+			<a class="tile cam" href="camera.php" aria-label="View camera">
+				<svg class="ic big" viewBox="0 0 24 24"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>
+			</a>
 
-			$host = "localhost";
-			$username = "USER";
-			$password = "12345678";
-			$database = "MYDB";
+			<form class="tile lock" method="POST" action="user.php">
+				<div class="state">
+					<?php if ($unlocking) { ?>
+						<svg class="ic" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 7.5-2"/></svg> Unlocking...
+					<?php } else { ?>
+						<svg class="ic" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg> Locked
+					<?php } ?>
+				</div>
+				<button class="pill" type="submit" name="btnunlock" <?php echo $unlocking ? 'disabled' : ''; ?>>Unlock</button>
+			</form>
 
-			// Connect to MySQL
-			$conn = new mysqli($host, $username, $password, $database);
-
-			// Check connection
-			if ($conn->connect_error) {
-				die("Connection failed: " . $conn->connect_error);
-			}
-
-			$now = new DateTime(null, new DateTimeZone('Asia/Manila'));
-			$datenow = $now->format('Y-m-d');
-			$timenow = $now->format('H:i:s');
-			if ($_SESSION["usernum"] == "1") {
-				
-				$stmt = $conn->prepare("UPDATE TBLUSER SET USERLOCK = '1' WHERE iD = 1");
-				$stmt->execute();
-				$stmt = $conn->prepare("INSERT INTO TBLLOGS (LOGSID, LOGSDATE, LOGSTIME, LOGSACTIVITY) VALUES (?, ?, ?, ?)");
-				$stmt->execute(["1",$datenow,$timenow,"User1 Unlock Door"]);
-			}
-			else {
-				$stmt = $conn->prepare("UPDATE TBLUSER SET USERLOCK = '1' WHERE iD = 2");
-				$stmt->execute();
-				$stmt = $conn->prepare("INSERT INTO TBLLOGS (LOGSID, LOGSDATE, LOGSTIME, LOGSACTIVITY) VALUES (?, ?, ?, ?)");
-				$stmt->execute(["2",$datenow,$timenow,"User2 Unlock Door"]);
-				
-			}
-			//header('Location: user.php');
-			//exit;
-		}
-
-
-		if (isset($_POST['btnView'])) {
-			header('Location: camera.php');
-			exit;
-		}
-
-
-	?>
-
-
-
-<div class="main">
-
-	<?php
-
-		$host = "localhost";
-		$username = "USER";
-		$password = "12345678";
-		$database = "MYDB";
-
-		// Connect to MySQL
-		$conn = new mysqli($host, $username, $password, $database);
-
-		// Check connection
-		if ($conn->connect_error) {
-		    die("Connection failed: " . $conn->connect_error);
-		}
-
-		// Get data
-		$sql = "SELECT * FROM TBLUSER";
-		$result = $conn->query($sql);
-
-		// Print each row
-		if ($result->num_rows > 0) {
-
-		    while ($row = $result->fetch_assoc()) {
-
-				//echo "ID: " . $row["ID"] . "<br>";
-				//echo "Name: " . $row["USERID"] . "<br>";
-				//echo "Email: " . $row["USERPASS"] . "<br>";
-
-				//echo "<hr>";
-
-				if ($row["ID"] == $_SESSION["usernum"]) {
-
-					echo "<label> NAME: </label>";
-					echo "<h2>" . $row["USERNAME"] . "</h2>";
-
-					echo "<label> BATTERY PERCENTAGE: </label>";
-					echo "<h2> " . $row["USERBATT"] . " %</h2>";
-
-					$tz = new DateTimeZone('Asia/Singapore');
-
-					// Create the two dates (example: now and a past date)
-					$date2 = new DateTime('now', $tz);
-					$date1 = new DateTime($row["USERDATE"] . " " . $row["USERTIME"], $tz);
-
-					// Calculate the difference
-					$interval = $date1->diff($date2);
-
-					//echo "$days days, $hours hours, $minutes minutes";
-					echo "<label> TIME STAYED: </label>";
-					echo "<h2>" . $interval->format('%d days, %h hours, %i minutes'). "</h2>";
-				}
-		    }
-
-		} else {
-		    echo "No data found.";
-		}
-
-		$conn->close();
-
-	?>
-
-
-	<form method="POST" action="#">
-		<div class="form-field">
-			<button class="btn" type="submit" name="btnunlock">Unlock Door</button>
+			<div class="tile batt">
+				<div>Battery<br>Percentage<b><?php echo $batt; ?> %</b></div>
+				<div class="cell<?php echo $batt < 20 ? ' low' : ''; ?>"><i style="height:<?php echo $batt; ?>%"></i></div>
+			</div>
 		</div>
 
-		<div class="form-field">
-			<button class="btn" type="submit" name="btnView">View Cam</button>
+		<div class="logs">
+			<h2>Latest logs for this unit</h2>
+			<div class="loglist">
+				<?php if ($logs->num_rows === 0) { echo '<div class="empty">No activity yet.</div>'; } ?>
+				<?php while ($r = $logs->fetch_assoc()) { ?>
+					<div class="log"><b><?php echo cy_h($r["LOGSACTIVITY"]); ?></b><span><?php echo cy_h($r["LOGSDATE"]) . " &middot; " . cy_h($r["LOGSTIME"]); ?></span></div>
+				<?php } ?>
+			</div>
 		</div>
-	</form>
-
-
-	<?php
-		$host = "localhost";
-		$username = "USER";
-		$password = "12345678";
-		$database = "MYDB";
-
-		// Connect to MySQL
-		$conn = new mysqli($host, $username, $password, $database);
-
-		// Check connection
-		if ($conn->connect_error) {
-		    die("Connection failed: " . $conn->connect_error);
-		}
-
-		// Get data
-		$sql = "SELECT * FROM TBLLOGS";
-		$result = $conn->query($sql);
-
-		// Print each row
-		if ($result->num_rows > 0) {
-
-			echo "<h2>ACTIVITY LOGS</h2>";
-			echo "<table>";
-			echo "<tr> <th>DATE</th> <th>TIME</th> <th>ACTIVITY</th> </tr>";
-
-		    while ($row = $result->fetch_assoc()) {
-
-				if ($row["LOGSID"] == "1") {
-					echo "<tr>";
-					echo "<td>". $row["LOGSDATE"] ."</td>";
-					echo "<td>". $row["LOGSTIME"] ."</td>";
-					echo "<td>". $row["LOGSACTIVITY"] ."</td>";
-					echo "</tr>";
-					
-				}
-		    }
-
-		} else {
-		    echo "No data found.";
-		}
-
-		$conn->close();
-		echo "</table>";
-	?>
-
-
+	</div>
 </div>
 </body>
 </html>
