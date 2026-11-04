@@ -48,12 +48,12 @@
 	<?php
 		if ($_SESSION["usernum"] == "1") { 
 	?>	
-		<img id="myImage" src="http://192.168.5.71/stream" alt="Changeable Image">
+		<img id="myImage" src="http://192.168.0.111/stream" alt="Changeable Image">
 	<?php 
 		}
 		else {
 	?>	
-		<img id="myImage" src="http://192.168.5.61/stream" alt="Changeable Image">
+		<img id="myImage" src="http://192.168.0.121/stream" alt="Changeable Image">
 	<?php 
 		}
 	?>

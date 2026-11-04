@@ -78,12 +78,12 @@
 	<?php
 		if ($_SESSION["userflag"] == "1" ) {
 	?>
-			<img id="myImage" src="http://192.168.5.72/stream" alt="Changeable Image">
+			<img id="myImage" src="http://192.168.0.113/stream" alt="Changeable Image">
 	<?php	
 		}
 		else {
 		?>	
-			<img id="myImage" src="http://192.168.5.62/stream" alt="Changeable Image">
+			<img id="myImage" src="http://192.168.0.123/stream" alt="Changeable Image">
 	<?php
 
 		}

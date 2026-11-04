@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+*.avi
+*.sql
+.htpasswd
+config.php
+*.env
