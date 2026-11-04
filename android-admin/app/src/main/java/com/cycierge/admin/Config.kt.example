@@ -1,0 +1,8 @@
+package com.cycierge.admin
+
+object Config {
+    const val LAN = "http://192.168.0.XXX"                      // Pi static IP
+    const val TAILSCALE = "https://cycierge.YOURTAILNET.ts.net" // Tailscale Serve URL
+    // URL path where cam.php lives. If it's http://PI/cycierge/cam.php -> "/cycierge". If at web root -> "".
+    const val APP_PATH = "/cycierge"
+}

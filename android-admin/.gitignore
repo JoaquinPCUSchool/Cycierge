@@ -1,0 +1,6 @@
+build/
+.gradle/
+.idea/
+local.properties
+*.apk
+app/src/main/java/com/cycierge/admin/Config.kt
