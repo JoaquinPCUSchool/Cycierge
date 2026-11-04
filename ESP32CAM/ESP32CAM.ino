@@ -8,10 +8,10 @@
 
 //        TENANT  RPI   ADMIN
 //ROOM 1: 111     112   113
-//ROOM 2: 121     122   123     
+//ROOM 2: 121     122   123
 
 
-IPAddress local_IP(192, 168, 0, 123);
+IPAddress local_IP(192, 168, 0, 121);
 IPAddress gateway(192, 168, 0, 1);
 IPAddress subnet(255, 255, 255, 0);
 IPAddress primaryDNS(8, 8, 8, 8);
@@ -20,31 +20,31 @@ IPAddress primaryDNS(8, 8, 8, 8);
 // WiFi
 // =====================================================
 
-const char* ssid = "samplemesh";
-const char* password = "12345678";
+const char *ssid = "samplemesh";
+const char *password = "12345678";
 
 // =====================================================
 // AI-Thinker ESP32-CAM pins
 // =====================================================
 
-#define PWDN_GPIO_NUM     32
-#define RESET_GPIO_NUM    -1
-#define XCLK_GPIO_NUM      0
-#define SIOD_GPIO_NUM     26
-#define SIOC_GPIO_NUM     27
+#define PWDN_GPIO_NUM 32
+#define RESET_GPIO_NUM -1
+#define XCLK_GPIO_NUM 0
+#define SIOD_GPIO_NUM 26
+#define SIOC_GPIO_NUM 27
 
-#define Y9_GPIO_NUM       35
-#define Y8_GPIO_NUM       34
-#define Y7_GPIO_NUM       39
-#define Y6_GPIO_NUM       36
-#define Y5_GPIO_NUM       21
-#define Y4_GPIO_NUM       19
-#define Y3_GPIO_NUM       18
-#define Y2_GPIO_NUM        5
+#define Y9_GPIO_NUM 35
+#define Y8_GPIO_NUM 34
+#define Y7_GPIO_NUM 39
+#define Y6_GPIO_NUM 36
+#define Y5_GPIO_NUM 21
+#define Y4_GPIO_NUM 19
+#define Y3_GPIO_NUM 18
+#define Y2_GPIO_NUM 5
 
-#define VSYNC_GPIO_NUM    25
-#define HREF_GPIO_NUM     23
-#define PCLK_GPIO_NUM     22
+#define VSYNC_GPIO_NUM 25
+#define HREF_GPIO_NUM 23
+#define PCLK_GPIO_NUM 22
 
 // =====================================================
 
@@ -54,12 +54,11 @@ WebServer server(80);
 // Camera setup
 // =====================================================
 
-void setupCamera()
-{
+void setupCamera() {
   camera_config_t config;
 
   config.ledc_channel = LEDC_CHANNEL_0;
-  config.ledc_timer   = LEDC_TIMER_0;
+  config.ledc_timer = LEDC_TIMER_0;
 
   config.pin_d0 = Y2_GPIO_NUM;
   config.pin_d1 = Y3_GPIO_NUM;
@@ -85,7 +84,8 @@ void setupCamera()
 
   // IMPORTANT
   // Your sensor works with RGB565
-  config.pixel_format = PIXFORMAT_RGB565;
+  config.pixel_format = PIXFORMAT_JPEG;
+  ;
 
   // Start with QVGA for stability
   config.frame_size = FRAMESIZE_QVGA;
@@ -94,6 +94,7 @@ void setupCamera()
 
   if (psramFound()) {
     config.fb_count = 2;
+    config.grab_mode = CAMERA_GRAB_LATEST;
   } else {
     config.fb_count = 1;
   }
@@ -103,8 +104,7 @@ void setupCamera()
   if (err != ESP_OK) {
     Serial.printf(
       "Camera initialization failed: 0x%x\n",
-      err
-    );
+      err);
 
     while (true) {
       delay(1000);
@@ -118,8 +118,7 @@ void setupCamera()
   if (sensor) {
     Serial.printf(
       "Sensor PID: 0x%04X\n",
-      sensor->id.PID
-    );
+      sensor->id.PID);
   }
 }
 
@@ -127,16 +126,14 @@ void setupCamera()
 // Send one JPEG image
 // =====================================================
 
-void handleJPG()
-{
+void handleJPG() {
   camera_fb_t *fb = esp_camera_fb_get();
 
   if (!fb) {
     server.send(
       500,
       "text/plain",
-      "Camera capture failed"
-    );
+      "Camera capture failed");
 
     return;
   }
@@ -147,15 +144,14 @@ void handleJPG()
   uint8_t *jpgBuffer = NULL;
 
   bool converted = fmt2jpg(
-                     fb->buf,
-                     fb->len,
-                     fb->width,
-                     fb->height,
-                     PIXFORMAT_RGB565,
-                     80,
-                     &jpgBuffer,
-                     &jpgSize
-                   );
+    fb->buf,
+    fb->len,
+    fb->width,
+    fb->height,
+    PIXFORMAT_RGB565,
+    80,
+    &jpgBuffer,
+    &jpgSize);
 
   esp_camera_fb_return(fb);
 
@@ -163,29 +159,25 @@ void handleJPG()
     server.send(
       500,
       "text/plain",
-      "JPEG conversion failed"
-    );
+      "JPEG conversion failed");
 
     return;
   }
 
   server.sendHeader(
     "Content-Length",
-    String(jpgSize)
-  );
+    String(jpgSize));
 
   server.send(
     200,
     "image/jpeg",
-    ""
-  );
+    "");
 
   WiFiClient client = server.client();
 
   client.write(
     jpgBuffer,
-    jpgSize
-  );
+    jpgSize);
 
   free(jpgBuffer);
 }
@@ -194,8 +186,7 @@ void handleJPG()
 // MJPEG stream
 // =====================================================
 
-void handleStream()
-{
+void handleStream() {
   WiFiClient client = server.client();
 
   client.print(
@@ -203,8 +194,7 @@ void handleStream()
     "Content-Type: multipart/x-mixed-replace; boundary=frame\r\n"
     "Cache-Control: no-cache\r\n"
     "Pragma: no-cache\r\n"
-    "Connection: close\r\n\r\n"
-  );
+    "Connection: close\r\n\r\n");
 
   while (client.connected()) {
 
@@ -213,8 +203,7 @@ void handleStream()
 
     if (!fb) {
       Serial.println(
-        "Camera capture failed"
-      );
+        "Camera capture failed");
 
       break;
     }
@@ -223,22 +212,20 @@ void handleStream()
     size_t jpgSize = 0;
 
     bool converted = fmt2jpg(
-                       fb->buf,
-                       fb->len,
-                       fb->width,
-                       fb->height,
-                       PIXFORMAT_RGB565,
-                       70,
-                       &jpgBuffer,
-                       &jpgSize
-                     );
+      fb->buf,
+      fb->len,
+      fb->width,
+      fb->height,
+      PIXFORMAT_RGB565,
+      70,
+      &jpgBuffer,
+      &jpgSize);
 
     esp_camera_fb_return(fb);
 
     if (!converted) {
       Serial.println(
-        "JPEG conversion failed"
-      );
+        "JPEG conversion failed");
 
       break;
     }
@@ -248,13 +235,11 @@ void handleStream()
       "Content-Type: image/jpeg\r\n"
       "Content-Length: %u\r\n"
       "\r\n",
-      (unsigned int)jpgSize
-    );
+      (unsigned int)jpgSize);
 
     client.write(
       jpgBuffer,
-      jpgSize
-    );
+      jpgSize);
 
     client.print("\r\n");
 
@@ -269,151 +254,138 @@ void handleStream()
 // ESP32 web page
 // =====================================================
 
-void handleRoot()
-{
+void handleRoot() {
   String page = R"rawliteral(
-<!DOCTYPE html>
+  <!DOCTYPE html>
 
-<html>
+  <html>
 
-<head>
-<meta name="viewport"
-      content="width=device-width,initial-scale=1">
+  <head>
+  <meta name="viewport"
+        content="width=device-width,initial-scale=1">
 
-<title>ESP32 Camera</title>
+  <title>ESP32 Camera</title>
 
-<style>
+  <style>
 
-body {
-    background: #111;
-    color: white;
-    font-family: Arial;
-    text-align: center;
-}
+  body {
+      background: #111;
+      color: white;
+      font-family: Arial;
+      text-align: center;
+  }
 
-img {
-    width: 100%;
-    max-width: 640px;
-}
+  img {
+      width: 100%;
+      max-width: 640px;
+  }
 
-</style>
+  </style>
 
-</head>
+  </head>
 
-<body>
+  <body>
 
-<h1>ESP32-CAM</h1>
+  <h1>ESP32-CAM</h1>
 
-<img src="/stream">
+  <img src="/stream">
 
-<p>Live video</p>
+  <p>Live video</p>
 
-</body>
+  </body>
 
-</html>
-)rawliteral";
+  </html>
+  )rawliteral";
 
-    server.send(
-        200,
-        "text/html",
-        page
-    );
+  server.send(
+    200,
+    "text/html",
+    page);
 }
 
 // =====================================================
 // Setup
 // =====================================================
 
-void setup()
-{
-    Serial.begin(115200);
+void setup() {
+  Serial.begin(115200);
 
-    delay(1000);
+  delay(1000);
 
-    Serial.println();
-    Serial.println("==============================");
-    Serial.println("ESP32-CAM LIVE STREAM");
-    Serial.println("==============================");
+  Serial.println();
+  Serial.println("==============================");
+  Serial.println("ESP32-CAM LIVE STREAM");
+  Serial.println("==============================");
 
-    if (!WiFi.config(local_IP, gateway, subnet, primaryDNS)) {
+  if (!WiFi.config(local_IP, gateway, subnet, primaryDNS)) {
     Serial.println("Configuration failed");
     return;
   }
 
-    setupCamera();
+  setupCamera();
 
-    // =================================================
-    // WiFi
-    // =================================================
+  // =================================================
+  // WiFi
+  // =================================================
 
-    WiFi.begin(
-        ssid,
-        password
-    );
+  WiFi.begin(
+    ssid,
+    password);
 
-    Serial.print(
-        "Connecting to WiFi"
-    );
+  WiFi.setSleep(false);
 
-    while (
-        WiFi.status() != WL_CONNECTED
-    ) {
-        delay(500);
+  Serial.print(
+    "Connecting to WiFi");
 
-        Serial.print(".");
-    }
+  while (
+    WiFi.status() != WL_CONNECTED) {
+    delay(500);
 
-    Serial.println();
-    Serial.println(
-        "WiFi connected!"
-    );
+    Serial.print(".");
+  }
 
-    Serial.print(
-        "ESP32-CAM IP: "
-    );
+  Serial.println();
+  Serial.println(
+    "WiFi connected!");
 
-    Serial.println(
-        WiFi.localIP()
-    );
+  Serial.print(
+    "ESP32-CAM IP: ");
 
-    // =================================================
-    // HTTP routes
-    // =================================================
+  Serial.println(
+    WiFi.localIP());
 
-    server.on(
-        "/",
-        HTTP_GET,
-        handleRoot
-    );
+  // =================================================
+  // HTTP routes
+  // =================================================
 
-    server.on(
-        "/jpg",
-        HTTP_GET,
-        handleJPG
-    );
+  server.on(
+    "/",
+    HTTP_GET,
+    handleRoot);
 
-    server.on(
-        "/stream",
-        HTTP_GET,
-        handleStream
-    );
+  server.on(
+    "/jpg",
+    HTTP_GET,
+    handleJPG);
 
-    server.begin();
+  server.on(
+    "/stream",
+    HTTP_GET,
+    handleStream);
 
-    Serial.println(
-        "HTTP server started"
-    );
+  server.begin();
 
-    Serial.println(
-        "Open the IP address in a browser."
-    );
+  Serial.println(
+    "HTTP server started");
+
+  Serial.println(
+    "Open the IP address in a browser.");
 }
 
 // =====================================================
 // Loop
 // =====================================================
 
-void loop()
-{
-    server.handleClient();
+void loop() {
+  server.handleClient();
 }

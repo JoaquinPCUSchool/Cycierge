@@ -18,18 +18,15 @@ const char* WIFI_PASSWORD = "12345678";
 
 
 
-void getData()
-{
-  if (WiFi.status() != WL_CONNECTED)
-  {
+void getData() {
+  if (WiFi.status() != WL_CONNECTED) {
     Serial.println("WiFi disconnected!");
     return;
   }
   WiFiClient client;
   HTTPClient http;
   Serial.println("\nRequesting data from Raspberry Pi...");
-  if (!http.begin(client, "http://" + ipVar + "/cycierge/user/getdata.php"))
-  {
+  if (!http.begin(client, "http://" + ipVar + "/cycierge/user/getdata.php")) {
     Serial.println("HTTP begin failed!");
     return;
   }
@@ -56,13 +53,12 @@ void getData()
       return;
     }
     JsonArray users = doc.as<JsonArray>();
-    if (users.size() == 0)
-    {
+    if (users.size() == 0) {
       Serial.println("No data received.");
       http.end();
       return;
     }
-    for (int x = 0; x < 2; x ++) {
+    for (int x = 0; x < 2; x++) {
       JsonObject user = users[x];
       Serial.println("\n===== USER DATA =====");
       if (String(user["ID"] | "") == roomID) {
@@ -80,8 +76,7 @@ void getData()
       }
       Serial.println("=====================");
     }
-  }
-  else {
+  } else {
     Serial.print("HTTP error: ");
     Serial.println(http.errorToString(httpCode));
   }
@@ -139,21 +134,16 @@ void postMyd(String BattVarm, String CamVarm) {
 
         Serial.print("Inserted ID: ");
         Serial.println(
-          result["inserted_id"] | "unknown"
-        );
-      }
-      else {
+          result["inserted_id"] | "unknown");
+      } else {
         Serial.print("Insert failed: ");
         Serial.println(
-          result["message"] | "Unknown error"
-        );
+          result["message"] | "Unknown error");
       }
-    }
-    else {
+    } else {
       Serial.println("Response was not valid JSON.");
     }
-  }
-  else {
+  } else {
     Serial.print("POST error: ");
     Serial.println(http.errorToString(httpCode));
   }
@@ -170,7 +160,7 @@ void postLockerData(String LockVarm) {
   }
   // Build JSON payload
   DynamicJsonDocument doc(512);
-  
+
   doc["USERLOCK"] = LockVarm;
   doc["ID"] = roomID;
   String jsonPayload;
@@ -212,34 +202,27 @@ void postLockerData(String LockVarm) {
 
         Serial.print("Inserted ID: ");
         Serial.println(
-          result["inserted_id"] | "unknown"
-        );
-      }
-      else {
+          result["inserted_id"] | "unknown");
+      } else {
         Serial.print("Insert failed: ");
         Serial.println(
-          result["message"] | "Unknown error"
-        );
+          result["message"] | "Unknown error");
       }
-    }
-    else {
+    } else {
       Serial.println("Response was not valid JSON.");
     }
-  }
-  else {
+  } else {
     Serial.print("POST error: ");
     Serial.println(http.errorToString(httpCode));
   }
   http.end();
 }
 
-void setup()
-{
+void setup() {
   Serial.begin(115200);
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   Serial.print("Connecting to WiFi");
-  while (WiFi.status() != WL_CONNECTED)
-  {
+  while (WiFi.status() != WL_CONNECTED) {
     delay(500);
     Serial.print(".");
   }
@@ -247,47 +230,37 @@ void setup()
   Serial.print("ESP32 IP: ");
   Serial.println(WiFi.localIP());
 
+  Serial2.setRxBufferSize(1024);
+
   Serial2.begin(9600, SERIAL_8N1, RXD2, TXD2);
+
+  Serial2.setTimeout(50);
 }
 
+unsigned long lastPost = 0;
+String latestLine = "";
+
 void loop() {
-
   getData();
-  if (Serial2.available()) {
-    String data = Serial2.readStringUntil('\n');
-    data.trim();
-    float values[2];
-    int count = 0;
-    int start = 0;
-    while (count < 2) {
-      int comma = data.indexOf(',', start);
-      if (comma == -1) {
-        values[count++] = data.substring(start).toFloat();
-        break;
-      }
-      values[count++] = data.substring(start, comma).toFloat();
-      start = comma + 1;
-    }
 
-    if (count == 2) {
-      voltage = (int)values[0];
-      if (voltage > 100) {
-        voltage = 100;
-      }
-      if (voltage < 0) {
-        voltage = 0;
-      }
-      status = (int)values[1];
-
-      Serial.print("voltage: ");
-      Serial.println(voltage);
-
-      Serial.print("Status: ");
-      Serial.println(status);
-      Serial.println("---");
-      postMyd(String(voltage), String(status));
-    }
+  // Drain everything the Nano sent; keep only the newest complete line
+  while (Serial2.available()) {
+    String line = Serial2.readStringUntil('\n');
+    line.trim();
+    if (line.length() > 0) latestLine = line;
   }
 
-  delay(1000);
+  if (latestLine.length() > 0 && millis() - lastPost >= 5000) {
+    int comma = latestLine.indexOf(',');
+    if (comma > 0) {
+      voltage = constrain(latestLine.substring(0, comma).toInt(), 0, 100);
+      status = latestLine.substring(comma + 1).toInt();
+      Serial.printf("voltage: %d  status: %d\n", voltage, status);
+      postMyd(String(voltage), String(status));
+      lastPost = millis();
+    }
+    latestLine = "";
+  }
+
+  delay(200);
 }
