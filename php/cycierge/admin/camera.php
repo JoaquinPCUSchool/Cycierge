@@ -74,12 +74,12 @@
 	<?php
 		if ($_SESSION["userflag"] == "1" ) {
 	?>
-			<img id="myImage" src="http://192.168.0.113/stream" alt="Changeable Image">
+			<img id="myImage" src="../cam.php?room=1&amp;who=admin" alt="Changeable Image">
 	<?php	
 		}
 		else {
 		?>	
-			<img id="myImage" src="http://192.168.0.123/stream" alt="Changeable Image">
+			<img id="myImage" src="../cam.php?room=2&amp;who=admin" alt="Changeable Image">
 	<?php
 
 		}
@@ -175,5 +175,16 @@
 	</script>
 </form>
 </div>
+<script>
+// Live view: fetch one snapshot at a time through cam.php, then ask for the next.
+(function () {
+  var img = document.getElementById("myImage");
+  if (!img) return;
+  var base = img.getAttribute("src").split("&t=")[0];
+  function next() { img.src = base + "&t=" + Date.now(); }
+  img.onload = function () { setTimeout(next, 400); };
+  img.onerror = function () { setTimeout(next, 3000); };
+})();
+</script>
 </body>
 </html>
