@@ -5,3 +5,5 @@ __pycache__/
 .htpasswd
 config.php
 *.env
+
+.idea/
