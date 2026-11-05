@@ -23,6 +23,21 @@ data class Room(
 data class LogRow(val date: String, val time: String, val activity: String)
 class AuthException : Exception("Session expired")
 
+data class ReportBucket(val label: String, val unlocks: Int, val detections: Int, val occupiedDays: Int)
+data class ReportRoom(
+    val room: Int, val tenant: String, val checkins: Int,
+    val unlocks: Int, val byTenant: Int, val byAdmin: Int, val detections: Int,
+    val occupiedDays: Int, val occupancyPct: Double, val buckets: List<ReportBucket>
+)
+data class ReportTotals(
+    val checkins: Int, val unlocks: Int, val byTenant: Int, val byAdmin: Int,
+    val detections: Int, val occupiedDays: Int, val occupancyPct: Double
+)
+data class Report(
+    val period: String, val start: String, val end: String, val days: Int, val elapsedDays: Int,
+    val rooms: List<ReportRoom>, val totals: ReportTotals
+)
+
 object Api {
     private val json = "application/json".toMediaType()
 
@@ -110,6 +125,35 @@ object Api {
             val o = a.getJSONObject(it)
             LogRow(o.optString("LOGSDATE"), o.optString("LOGSTIME"), o.optString("LOGSACTIVITY"))
         }
+    }
+
+    /** period = week | month | year; date = any yyyy-MM-dd inside the wanted period. */
+    suspend fun report(period: String, date: String): Report {
+        val o = JSONObject(call("/admin/api/report.php?period=$period&date=$date"))
+        val ra = o.getJSONArray("rooms")
+        val rooms = (0 until ra.length()).map { i ->
+            val r = ra.getJSONObject(i)
+            val ba = r.getJSONArray("buckets")
+            ReportRoom(
+                room = r.optInt("room"), tenant = r.optString("tenant"), checkins = r.optInt("checkins"),
+                unlocks = r.optInt("unlocks"), byTenant = r.optInt("unlocks_tenant"), byAdmin = r.optInt("unlocks_admin"),
+                detections = r.optInt("detections"), occupiedDays = r.optInt("occupied_days"),
+                occupancyPct = r.optDouble("occupancy_pct", 0.0),
+                buckets = (0 until ba.length()).map { j ->
+                    val b = ba.getJSONObject(j)
+                    ReportBucket(b.optString("label"), b.optInt("unlocks"), b.optInt("detections"), b.optInt("occupied_days"))
+                }
+            )
+        }
+        val t = o.getJSONObject("totals")
+        return Report(
+            period = o.optString("period"), start = o.optString("start"), end = o.optString("end"),
+            days = o.optInt("days"), elapsedDays = o.optInt("elapsed_days"), rooms = rooms,
+            totals = ReportTotals(
+                t.optInt("checkins"), t.optInt("unlocks"), t.optInt("unlocks_tenant"), t.optInt("unlocks_admin"),
+                t.optInt("detections"), t.optInt("occupied_days"), t.optDouble("occupancy_pct", 0.0)
+            )
+        )
     }
 
     suspend fun clearLogs(room: Int) { call("/admin/api/clear_logs.php", JSONObject().put("room", room)) }

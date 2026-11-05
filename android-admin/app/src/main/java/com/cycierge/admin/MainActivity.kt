@@ -34,12 +34,18 @@ class MainActivity : ComponentActivity() {
 fun App() {
     var loggedIn by remember { mutableStateOf(false) }
     var room by remember { mutableStateOf<Room?>(null) }
-    BackHandler(enabled = room != null) { room = null }
+    var reports by remember { mutableStateOf(false) }
+    BackHandler(enabled = room != null || reports) { if (reports) reports = false else room = null }
     val r = room
     when {
         !loggedIn -> LoginScreen { loggedIn = true }
+        reports -> ReportScreen(
+            onBack = { reports = false },
+            onLogout = { Api.logout(); reports = false; loggedIn = false }
+        )
         r == null -> DashboardScreen(
             onOpen = { room = it },
+            onReports = { reports = true },
             onLogout = { Api.logout(); loggedIn = false }
         )
         else -> RoomScreen(r, onBack = { room = null }, onLogout = { Api.logout(); room = null; loggedIn = false })
@@ -77,7 +83,7 @@ fun LoginScreen(onOk: () -> Unit) {
 }
 
 @Composable
-fun DashboardScreen(onOpen: (Room) -> Unit, onLogout: () -> Unit) {
+fun DashboardScreen(onOpen: (Room) -> Unit, onReports: () -> Unit, onLogout: () -> Unit) {
     var rooms by remember { mutableStateOf<List<Room>>(emptyList()) }
     var err by remember { mutableStateOf<String?>(null) }
     var confirm by remember { mutableStateOf<Room?>(null) }
@@ -95,7 +101,10 @@ fun DashboardScreen(onOpen: (Room) -> Unit, onLogout: () -> Unit) {
     Column(Modifier.fillMaxSize().padding(16.dp).verticalScroll(rememberScrollState())) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             Text("Rooms", style = MaterialTheme.typography.headlineSmall)
-            TextButton(onClick = onLogout) { Text("Log out") }
+            Row {
+                TextButton(onClick = onReports) { Text("Reports") }
+                TextButton(onClick = onLogout) { Text("Log out") }
+            }
         }
         err?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         rooms.forEach { r ->
@@ -188,6 +197,7 @@ fun RoomScreen(room: Room, onBack: () -> Unit, onLogout: () -> Unit) {
         AlertDialog(
             onDismissRequest = { confirmClear = false },
             title = { Text("Delete all logs for Room ${room.id}?") },
+            text = { Text("Report history is kept.") },
             confirmButton = {
                 TextButton(onClick = {
                     confirmClear = false

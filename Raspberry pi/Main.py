@@ -13,6 +13,7 @@ import time
 from tkinter import messagebox
 from tkcalendar import DateEntry
 from datetime import datetime
+from report_view import showReport   # Administrative Report page (report_view.py, same folder)
 
 record1 = 0
 recordflag1 = 0
@@ -46,7 +47,7 @@ class SampleApp(Tk):
           container.grid_columnconfigure(0, weight=1)
           
           self.frames = {}
-          for F in (StartPage, Main, showRecord):      # FRAME *************
+          for F in (StartPage, Main, showRecord, showReport):      # FRAME *************
                page_name = F.__name__
                frame = F(parent=container, controller=self)
                self.frames[page_name] = frame
@@ -58,6 +59,8 @@ class SampleApp(Tk):
           '''Show a frame for the given page name'''
           frame = self.frames[page_name]
           frame.tkraise()
+          if hasattr(frame, 'on_show'):
+               frame.on_show()
 
 
 class StartPage(Frame):
@@ -175,7 +178,7 @@ class Main(Frame):
              print("Current Time =", now.strftime("%H:%M"))
              timenowvar = str(now.strftime("%H:%M"))
              print(timenowvar)
-             datenowvar = str(now.strftime("%Y-%M-%d"))
+             datenowvar = str(now.strftime("%Y-%m-%d"))
              print(timenowvar)
 
              req = requests.get("http://localhost/cycierge/admin/insertactivity.php?LOGSID='1'&LOGSDATE='"+str(datenowvar)+"'&LOGSTIME='"+str(timenowvar)+"'&LOGSACTIVITY='Admin Unlock Door 1'")
@@ -275,7 +278,7 @@ class Main(Frame):
              print("Current Time =", now.strftime("%H:%M"))
              timenowvar = str(now.strftime("%H:%M"))
              print(timenowvar)
-             datenowvar = str(now.strftime("%Y-%M-%d"))
+             datenowvar = str(now.strftime("%Y-%m-%d"))
              print(timenowvar)
 
              req = requests.get("http://localhost/cycierge/admin/insertactivity.php?LOGSID='2'&LOGSDATE='"+str(datenowvar)+"'&LOGSTIME='"+str(timenowvar)+"'&LOGSACTIVITY='Admin Unlock Door 2'")
@@ -288,6 +291,9 @@ class Main(Frame):
                
           
           maincanva = Canvas(self, bg='white')
+          btnReports = Button(maincanva, text = "REPORTS", bg = 'skyblue',
+                        command = lambda: controller.show_frame("showReport"))
+          btnReports.place(relx=0.5, rely=0.05, anchor='center', h=40, w=150)
           Label(maincanva, text = "ROOM # 1", font = ('',20,'bold')).place(relx=0.25, rely=0.05, anchor='center')
           
           displayCam1 = Label(maincanva)
@@ -481,8 +487,8 @@ class shoCamera1(threading.Thread):
                                    if (recordflag1 == 0) :
                                         now = datetime.now()
                                         fourcc = cv2.VideoWriter_fourcc(*'XVID')
-                                        frame_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-                                        frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+                                        frame_width = int(cap1.get(cv2.CAP_PROP_FRAME_WIDTH))
+                                        frame_height = int(cap1.get(cv2.CAP_PROP_FRAME_HEIGHT))
                                         cameranamevar = str(now.strftime("%Y%m%d%H%M%S"))
                                         out = cv2.VideoWriter('/home/pi/Desktop/SourceCode/VideoCapture/' + cameranamevar +'.avi', fourcc, 5, (frame_width, frame_height))
                                         req = requests.get("http://localhost/cycierge/admin/insertlogs.php?RECORDID='1'&DT='" + cameranamevar + "'")
@@ -541,8 +547,8 @@ class shoCamera2(threading.Thread):
                                    if (recordflag2 == 0) :
                                         now = datetime.now()
                                         fourcc = cv2.VideoWriter_fourcc(*'XVID')
-                                        frame_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-                                        frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+                                        frame_width = int(cap2.get(cv2.CAP_PROP_FRAME_WIDTH))
+                                        frame_height = int(cap2.get(cv2.CAP_PROP_FRAME_HEIGHT))
                                         cameranamevar = str(now.strftime("%Y%m%d%H%M%S"))
                                         out = cv2.VideoWriter('/home/pi/Desktop/SourceCode/VideoCapture/' + cameranamevar +'.avi', fourcc, 5, (frame_width, frame_height))
                                         req = requests.get("http://localhost/cycierge/admin/insertlogs.php?RECORDID='2'&DT='" + cameranamevar + "'")
