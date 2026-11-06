@@ -37,12 +37,13 @@ if (isset($_POST['usernamevar'])) {
 <head>
 	<meta charset="UTF-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<meta name="theme-color" content="#0b1f3a">
 	<title>Login | CyCierge</title>
 	<link rel="stylesheet" href="style.css">
 </head>
 <body>
 	<div class="login">
-		<h1 class="brand">CyCierge</h1>
+		<h1 class="brand"><span>Cy</span>Cierge</h1>
 		<p class="tag">Security made smart</p>
 		<div class="rule"></div>
 

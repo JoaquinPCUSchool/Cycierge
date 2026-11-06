@@ -11,10 +11,11 @@ $room = (int)$_SESSION["usernum"];
 	<link rel="stylesheet" href="style.css">
 </head>
 <body>
-<div class="live">
+<div class="livewrap">
 	<div class="stage">
 		<img id="stream" src="../cam.php?room=<?php echo $room; ?>&amp;who=tenant" alt="Live camera">
 		<div class="offline" id="off">Camera unavailable</div>
+		<div class="badge"><i></i>LIVE</div>
 		<div class="clock" id="clock">HH:MM</div>
 		<div class="overlay"><span>Room no. <?php echo $room; ?></span><span id="date">DD/MM/YYYY</span></div>
 	</div>
@@ -22,7 +23,7 @@ $room = (int)$_SESSION["usernum"];
 		<button class="back" onclick="goBack()" aria-label="Back">
 			<svg class="ic" viewBox="0 0 24 24"><path d="M19 12H5M11 6l-6 6 6 6"/></svg>
 		</button>
-		CyCierge
+		<div class="wordmark"><span>Cy</span>Cierge</div>
 	</div>
 </div>
 <script>
