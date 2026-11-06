@@ -2,7 +2,12 @@ package com.cycierge.admin
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.util.Log
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import okhttp3.Cookie
 import okhttp3.CookieJar
@@ -14,6 +19,8 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.IOException
+import java.net.Inet4Address
+import java.net.NetworkInterface
 import java.util.concurrent.TimeUnit
 
 data class Room(
@@ -50,22 +57,67 @@ object Api {
         }
         override fun loadForRequest(url: HttpUrl): List<Cookie> = synchronized(store) { store[url.host].orEmpty() }
     }
-    private val http = OkHttpClient.Builder().cookieJar(jar).callTimeout(6, TimeUnit.SECONDS).build()
-    private val probe = http.newBuilder().callTimeout(2500, TimeUnit.MILLISECONDS).build()
+    private val http = OkHttpClient.Builder().cookieJar(jar).callTimeout(10, TimeUnit.SECONDS).build()
+    // LAN answers in milliseconds, so fail fast. Funnel needs DNS + TLS + relay on a cold mobile-data
+    // connection, which routinely takes more than 2.5 s -- give it room.
+    private val lanProbe = http.newBuilder().callTimeout(1500, TimeUnit.MILLISECONDS).build()
+    private val wanProbe = http.newBuilder().callTimeout(8000, TimeUnit.MILLISECONDS).build()
 
     @Volatile private var base: String? = null
     @Volatile private var creds: Pair<String, String>? = null
+    private val resolveLock = Mutex()   // dashboard + room screens poll in parallel: probe only once
 
-    private fun reachable(root: String) = try {
-        probe.newCall(Request.Builder().url("$root${Config.APP_PATH}/admin/api/ping.php").build())
-            .execute().use { it.isSuccessful }
-    } catch (e: IOException) { false }
+    /** "" = checking, "LAN", "Funnel", "OFFLINE". Drives the chip in the UI. */
+    private val _route = MutableStateFlow("")
+    val route: StateFlow<String> = _route
 
-    /** LAN first (2.5 s probe), then Tailscale. */
-    suspend fun resolveBase(): String = withContext(Dispatchers.IO) {
-        base ?: (listOf(Config.LAN, Config.TAILSCALE).firstOrNull { reachable(it) }
-            ?: throw IOException("Pi unreachable (LAN and Tailscale)")).also { base = it }
+    private const val TAG = "cycierge"
+    private class Probe(val name: String, val root: String, val client: OkHttpClient)
+
+    /** null = reachable, otherwise a short reason (shown to the user and in logcat). */
+    private fun probe(p: Probe): String? = try {
+        p.client.newCall(Request.Builder().url("${p.root}${Config.APP_PATH}/admin/api/ping.php").build())
+            .execute().use { r ->
+                val body = r.body?.string().orEmpty()
+                // body check rejects captive portals / other devices that happen to answer on that IP
+                if (r.isSuccessful && body.contains("\"ok\"")) null else "HTTP ${r.code}"
+            }
+    } catch (e: IOException) { e.message ?: e.javaClass.simpleName }
+
+    /** Does this phone have an IPv4 address on the Pi's /24? Only used to pick which route to try first. */
+    private fun onLanSubnet(): Boolean = try {
+        val prefix = Config.LAN.substringAfter("://").substringBeforeLast('.') + "."
+        NetworkInterface.getNetworkInterfaces().toList().any { ni ->
+            ni.isUp && ni.inetAddresses.toList().any { it is Inet4Address && it.hostAddress?.startsWith(prefix) == true }
+        }
+    } catch (e: Exception) { true }
+
+    private fun pick(): String {
+        val lan = Probe("LAN", Config.LAN.trimEnd('/'), lanProbe)
+        val wan = Probe("Funnel", Config.TAILSCALE.trimEnd('/'), wanProbe)
+        // On the Pi's subnet: LAN first. Anywhere else: Funnel first. Either way the other one is the fallback.
+        val order = if (onLanSubnet()) listOf(lan, wan) else listOf(wan, lan)
+        val fails = ArrayList<String>()
+        for (p in order) {
+            val why = probe(p)
+            if (why == null) {
+                Log.i(TAG, "route=${p.name} ${p.root}")
+                _route.value = p.name
+                return p.root
+            }
+            Log.w(TAG, "${p.name} probe failed: $why (${p.root})")
+            fails += "${p.name}: $why"
+        }
+        _route.value = "OFFLINE"
+        throw IOException("Pi unreachable - " + fails.joinToString("; "))
     }
+
+    suspend fun resolveBase(): String = withContext(Dispatchers.IO) {
+        base ?: resolveLock.withLock { base ?: pick().also { base = it } }
+    }
+
+    /** Forget the chosen route so the next call re-probes. MainActivity calls this on every network change. */
+    fun invalidate() { base = null; _route.value = "" }
 
     suspend fun login(user: String, pass: String): Boolean = withContext(Dispatchers.IO) {
         val url = resolveBase() + Config.APP_PATH + "/admin/api/login.php"

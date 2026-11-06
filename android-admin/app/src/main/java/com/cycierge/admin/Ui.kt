@@ -16,6 +16,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -192,6 +193,26 @@ fun BatteryChip(pct: Int) {
         }
         Spacer(Modifier.width(8.dp))
         Text("$pct%", color = c, fontWeight = FontWeight.ExtraBold, fontSize = 14.sp)
+    }
+}
+
+/** Shows which route the app is using right now: LAN, REMOTE (Tailscale Funnel), OFFLINE. */
+@Composable
+fun RouteChip(modifier: Modifier = Modifier) {
+    val route by Api.route.collectAsState()
+    val (label, dot) = when (route) {
+        "LAN" -> "LAN" to Cy.Ok
+        "Funnel" -> "REMOTE" to Cy.Amber
+        "OFFLINE" -> "OFFLINE" to Cy.Low
+        else -> "CHECKING" to Cy.Mute
+    }
+    Row(
+        modifier.clip(CircleShape).background(Color(0xB30B1F3A)).padding(horizontal = 10.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(Modifier.size(8.dp).clip(CircleShape).background(dot))
+        Spacer(Modifier.width(6.dp))
+        Text(label, color = Cy.Cream, fontSize = 11.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 1.sp)
     }
 }
 

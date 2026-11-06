@@ -1,5 +1,7 @@
 package com.cycierge.admin
 
+import android.net.ConnectivityManager
+import android.net.Network
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
@@ -33,8 +35,15 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
+    // Wi-Fi <-> mobile data (or a different Wi-Fi): forget the cached route so it is re-probed.
+    private val netCb = object : ConnectivityManager.NetworkCallback() {
+        override fun onAvailable(network: Network) { Api.invalidate() }
+        override fun onLost(network: Network) { Api.invalidate() }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        getSystemService(ConnectivityManager::class.java).registerDefaultNetworkCallback(netCb)
         window.statusBarColor = Cy.Navy.toArgb()
         window.navigationBarColor = Cy.Navy.toArgb()
         WindowCompat.getInsetsController(window, window.decorView).apply {
@@ -46,6 +55,11 @@ class MainActivity : ComponentActivity() {
                 Surface(Modifier.fillMaxSize().cyBackground(), color = Color.Transparent, contentColor = Cy.Cream) { App() }
             }
         }
+    }
+
+    override fun onDestroy() {
+        getSystemService(ConnectivityManager::class.java).unregisterNetworkCallback(netCb)
+        super.onDestroy()
     }
 }
 
@@ -97,6 +111,9 @@ fun LoginScreen(onOk: () -> Unit) {
     var busy by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
+    // Probe in the background while the login form is showing; cheap when the route is already cached.
+    LaunchedEffect(Unit) { while (true) { runCatching { Api.resolveBase() }; delay(5000) } }
+
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 28.dp, vertical = 32.dp),
         verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally
@@ -109,6 +126,7 @@ fun LoginScreen(onOk: () -> Unit) {
         }
         Text("Admin Login", fontSize = 18.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(8.dp))
+        RouteChip()
 
         FieldLabel("Username")
         OutlinedTextField(user, { user = it }, singleLine = true, shape = RoundedCornerShape(12.dp),
@@ -253,7 +271,7 @@ fun DashboardScreen(onOpen: (Room) -> Unit, onEdit: (Room) -> Unit, onReports: (
     Column(Modifier.fillMaxSize()) {
         CyTopBar(
             start = { Wordmark(20.sp) },
-            end = { RoundIcon(Ic.Logout, "Log out", onLogout) }
+            end = { RouteChip(); Spacer(Modifier.width(8.dp)); RoundIcon(Ic.Logout, "Log out", onLogout) }
         )
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(18.dp)) {
             Hero("Admin management", "All", "rooms")
