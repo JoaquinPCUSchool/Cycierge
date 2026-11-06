@@ -54,20 +54,23 @@ fun App() {
     var loggedIn by remember { mutableStateOf(false) }
     var room by remember { mutableStateOf<Room?>(null) }
     var reports by remember { mutableStateOf(false) }
-    BackHandler(enabled = room != null || reports) { if (reports) reports = false else room = null }
+    var edit by remember { mutableStateOf<Room?>(null) }
+    BackHandler(enabled = edit != null || room != null || reports) {
+        when {
+            edit != null -> edit = null
+            reports -> reports = false
+            else -> room = null
+        }
+    }
     val r = room
+    val e = edit
+    val logout = { Api.logout(); edit = null; room = null; reports = false; loggedIn = false }
     when {
         !loggedIn -> LoginScreen { loggedIn = true }
-        reports -> ReportScreen(
-            onBack = { reports = false },
-            onLogout = { Api.logout(); reports = false; loggedIn = false }
-        )
-        r == null -> DashboardScreen(
-            onOpen = { room = it },
-            onReports = { reports = true },
-            onLogout = { Api.logout(); loggedIn = false }
-        )
-        else -> RoomScreen(r, onBack = { room = null }, onLogout = { Api.logout(); room = null; loggedIn = false })
+        e != null -> EditTenantScreen(e, onBack = { edit = null }, onLogout = logout)
+        reports -> ReportScreen(onBack = { reports = false }, onLogout = logout)
+        r == null -> DashboardScreen(onOpen = { room = it }, onEdit = { edit = it }, onReports = { reports = true }, onLogout = logout)
+        else -> RoomScreen(r, onBack = { room = null }, onEdit = { edit = it }, onLogout = logout)
     }
 }
 
@@ -133,9 +136,59 @@ fun LoginScreen(onOk: () -> Unit) {
     }
 }
 
+// ---------------------------------------------------------------- edit tenant
+@Composable
+fun EditTenantScreen(room: Room, onBack: () -> Unit, onLogout: () -> Unit) {
+    var name by remember { mutableStateOf(room.name) }
+    var uid by remember { mutableStateOf(room.tenantId) }
+    var pass by remember { mutableStateOf("") }
+    var err by remember { mutableStateOf<String?>(null) }
+    var busy by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+
+    Column(Modifier.fillMaxSize()) {
+        CyTopBar(start = { RoundIcon(Ic.Back, "Back", onBack); Wordmark(20.sp) })
+        Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(18.dp)) {
+            Hero("Room no. ${room.id}", "Edit", "tenant")
+
+            FieldLabel("Name of tenant")
+            OutlinedTextField(name, { name = it }, singleLine = true, shape = RoundedCornerShape(12.dp),
+                colors = cyFieldColors(), modifier = Modifier.fillMaxWidth())
+            FieldLabel("Username (tenant login)")
+            OutlinedTextField(uid, { uid = it }, singleLine = true, shape = RoundedCornerShape(12.dp),
+                colors = cyFieldColors(), modifier = Modifier.fillMaxWidth())
+            FieldLabel("New password")
+            OutlinedTextField(pass, { pass = it }, singleLine = true, shape = RoundedCornerShape(12.dp),
+                colors = cyFieldColors(), visualTransformation = PasswordVisualTransformation(),
+                modifier = Modifier.fillMaxWidth())
+            Text("Leave the password blank to keep the current one.", color = Cy.Mute, fontSize = 12.sp,
+                modifier = Modifier.padding(top = 6.dp))
+
+            Spacer(Modifier.height(20.dp))
+            err?.let { ErrorBox(it) }
+            ActionButton(
+                if (busy) "Saving…" else "Save", icon = Ic.Lock,
+                enabled = !busy && name.isNotBlank() && uid.isNotBlank(),
+                onClick = {
+                    busy = true; err = null
+                    scope.launch {
+                        try { Api.updateUser(room.id, name.trim(), uid.trim(), pass); onBack() }
+                        catch (e: AuthException) { onLogout() }
+                        catch (e: Exception) { err = e.message ?: "Couldn't save" }
+                        busy = false
+                    }
+                }
+            )
+            Spacer(Modifier.height(10.dp))
+            ActionButton("Cancel", onClick = onBack, style = Btn.Ghost)
+            BrandFoot()
+        }
+    }
+}
+
 // ---------------------------------------------------------------- building dashboard
 @Composable
-private fun RoomCard(r: Room, tick: Int, onUnlock: () -> Unit, onOpen: () -> Unit) {
+private fun RoomCard(r: Room, tick: Int, onUnlock: () -> Unit, onOpen: () -> Unit, onEdit: () -> Unit) {
     val vacant = r.name.isBlank()
     val stay = if (vacant) null else stayText(r.since, tick)
     CyCard(border = if (r.unlockPending) Cy.Amber else Cy.Line) {
@@ -174,11 +227,13 @@ private fun RoomCard(r: Room, tick: Int, onUnlock: () -> Unit, onOpen: () -> Uni
         )
         Spacer(Modifier.height(10.dp))
         ActionButton("Camera & logs", onClick = onOpen, icon = Ic.Camera, style = Btn.Teal)
+        Spacer(Modifier.height(10.dp))
+        ActionButton("Edit tenant", onClick = onEdit, icon = Ic.Person, style = Btn.Ghost)
     }
 }
 
 @Composable
-fun DashboardScreen(onOpen: (Room) -> Unit, onReports: () -> Unit, onLogout: () -> Unit) {
+fun DashboardScreen(onOpen: (Room) -> Unit, onEdit: (Room) -> Unit, onReports: () -> Unit, onLogout: () -> Unit) {
     var rooms by remember { mutableStateOf<List<Room>>(emptyList()) }
     var err by remember { mutableStateOf<String?>(null) }
     var confirm by remember { mutableStateOf<Room?>(null) }
@@ -204,7 +259,7 @@ fun DashboardScreen(onOpen: (Room) -> Unit, onReports: () -> Unit, onLogout: () 
             Hero("Admin management", "All", "rooms")
             err?.let { ErrorBox(it) }
             rooms.forEach { r ->
-                RoomCard(r, tick, onUnlock = { confirm = r }, onOpen = { onOpen(r) })
+                RoomCard(r, tick, onUnlock = { confirm = r }, onOpen = { onOpen(r) }, onEdit = { onEdit(r) })
                 Spacer(Modifier.height(14.dp))
             }
             CyCard(onClick = onReports) {
@@ -263,7 +318,7 @@ private fun LogItem(l: LogRow) {
 }
 
 @Composable
-fun RoomScreen(room: Room, onBack: () -> Unit, onLogout: () -> Unit) {
+fun RoomScreen(room: Room, onBack: () -> Unit, onEdit: (Room) -> Unit, onLogout: () -> Unit) {
     var cur by remember { mutableStateOf(room) }          // live copy: battery + unlock state
     var frame by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
     var camDown by remember { mutableStateOf(false) }
@@ -338,6 +393,20 @@ fun RoomScreen(room: Room, onBack: () -> Unit, onLogout: () -> Unit) {
                         if (cur.unlockPending) "Unlocking…" else "Unlock door", onClick = { confirmUnlock = true },
                         icon = Ic.Unlock, enabled = !cur.unlockPending, big = true
                     )
+                }
+            }
+
+            item {
+                CyCard(onClick = { onEdit(cur) }) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        IconTile(Ic.Person)
+                        Spacer(Modifier.width(14.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text("Edit tenant", fontWeight = FontWeight.ExtraBold, fontSize = 17.sp)
+                            Text("Name, username & password", color = Cy.Mute, fontSize = 13.sp)
+                        }
+                        CyIcon(Ic.Next, tint = Cy.Mute)
+                    }
                 }
             }
 
