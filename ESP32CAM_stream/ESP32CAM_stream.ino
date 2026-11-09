@@ -83,11 +83,11 @@ bool setupCamera() {
   config.pin_reset = RESET_GPIO_NUM;
 
   config.xclk_freq_hz = 20000000;
-  config.pixel_format = PIXFORMAT_JPEG;  // correct for OV2640
+  config.pixel_format = PIXFORMAT_RGB565;  // correct for OV2640
 
   if (psramFound()) {
     Serial.println("PSRAM found: using PSRAM frame buffers");
-    config.frame_size = FRAMESIZE_CIF;  // 640x480
+    config.frame_size = FRAMESIZE_QVGA;  // 640x480
     config.jpeg_quality = 18;
     config.fb_count = 2;
     config.fb_location = CAMERA_FB_IN_PSRAM;
@@ -129,16 +129,25 @@ void handleJPG() {
     return;
   }
 
+  uint8_t *jpg_buf = nullptr;
+  size_t jpg_len = 0;
+  bool ok = frame2jpg(fb, 80, &jpg_buf, &jpg_len);  // quality 0-100, higher = better
+  esp_camera_fb_return(fb);
+
+  if (!ok) {
+    server.send(500, "text/plain", "JPEG conversion failed");
+    return;
+  }
+
   WiFiClient client = server.client();
   client.printf(
     "HTTP/1.1 200 OK\r\n"
     "Content-Type: image/jpeg\r\n"
     "Content-Length: %u\r\n"
     "Connection: close\r\n\r\n",
-    (unsigned int)fb->len);
-  client.write(fb->buf, fb->len);
-
-  esp_camera_fb_return(fb);
+    (unsigned int)jpg_len);
+  client.write(jpg_buf, jpg_len);
+  free(jpg_buf);
 }
 
 // =====================================================
@@ -162,17 +171,21 @@ void handleStream() {
       break;
     }
 
+    uint8_t *jpg_buf = nullptr;
+    size_t jpg_len = 0;
+    bool ok = frame2jpg(fb, 80, &jpg_buf, &jpg_len);
+    esp_camera_fb_return(fb);
+    if (!ok) {
+      Serial.println("JPEG conversion failed");
+      break;
+    }
+
     client.printf(
       "--frame\r\nContent-Type: image/jpeg\r\nContent-Length: %u\r\n\r\n",
-      (unsigned int)fb->len);
-    size_t written = client.write(fb->buf, fb->len);
+      (unsigned int)jpg_len);
+    client.write(jpg_buf, jpg_len);
     client.print("\r\n");
-
-    esp_camera_fb_return(fb);
-
-    if (written != fb->len) {
-      break;  // client dropped
-    }
+    free(jpg_buf);
 
     delay(50);
   }

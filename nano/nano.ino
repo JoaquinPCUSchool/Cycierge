@@ -23,7 +23,7 @@ float R2 = 7500.0;
 float ref_voltage = 5.0;
 
 // Calibration: adjust so the printed voltage matches the real battery voltage.
-// Door 1: CAL = 1.00   Door 2: CAL = 3.7385   (edit the one for the Nano you're flashing)
+// Door 1: CAL = 1.00   Door 2: CAL = 0.94   (edit the one for the Nano you're flashing)
 float CAL = 0.94;
 
 // Battery curve (resting voltage -> percent). Example: 3S LiPo. Edit for your pack.

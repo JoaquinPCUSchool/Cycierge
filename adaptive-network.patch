@@ -1,0 +1,247 @@
+diff --git a/android-admin/README.md b/android-admin/README.md
+index 23e0c2a..b14dfab 100644
+--- a/android-admin/README.md
++++ b/android-admin/README.md
+@@ -6,3 +6,7 @@
+      ./gradlew assembleDebug && adb install -r app/build/outputs/apk/debug/app-debug.apk
+    (no gradlew yet? run `gradle wrapper --gradle-version 8.7` once, or let Android Studio create it)
+ 4. Debug: adb logcat | grep -iE "okhttp|cycierge"
++
++Connection: on the Pi's Wi-Fi subnet the app tries LAN first (1.5 s probe), anywhere else Funnel first (8 s probe);
++the other route is always the fallback, and the route is re-probed on every network change. The chip in the app
++shows LAN / REMOTE / OFFLINE, and a failed probe says why, e.g. "Pi unreachable - Funnel: HTTP 404; LAN: timeout".
+diff --git a/android-admin/app/src/main/AndroidManifest.xml b/android-admin/app/src/main/AndroidManifest.xml
+index 1c23600..bf00440 100644
+--- a/android-admin/app/src/main/AndroidManifest.xml
++++ b/android-admin/app/src/main/AndroidManifest.xml
+@@ -1,6 +1,7 @@
+ <?xml version="1.0" encoding="utf-8"?>
+ <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+     <uses-permission android:name="android.permission.INTERNET" />
++    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+     <application
+         android:label="CyCierge Admin"
+         android:usesCleartextTraffic="true"
+diff --git a/android-admin/app/src/main/java/com/cycierge/admin/Api.kt b/android-admin/app/src/main/java/com/cycierge/admin/Api.kt
+index f5187b5..966d8a2 100644
+--- a/android-admin/app/src/main/java/com/cycierge/admin/Api.kt
++++ b/android-admin/app/src/main/java/com/cycierge/admin/Api.kt
+@@ -2,7 +2,12 @@ package com.cycierge.admin
+ 
+ import android.graphics.Bitmap
+ import android.graphics.BitmapFactory
++import android.util.Log
+ import kotlinx.coroutines.Dispatchers
++import kotlinx.coroutines.flow.MutableStateFlow
++import kotlinx.coroutines.flow.StateFlow
++import kotlinx.coroutines.sync.Mutex
++import kotlinx.coroutines.sync.withLock
+ import kotlinx.coroutines.withContext
+ import okhttp3.Cookie
+ import okhttp3.CookieJar
+@@ -14,6 +19,8 @@ import okhttp3.RequestBody.Companion.toRequestBody
+ import org.json.JSONArray
+ import org.json.JSONObject
+ import java.io.IOException
++import java.net.Inet4Address
++import java.net.NetworkInterface
+ import java.util.concurrent.TimeUnit
+ 
+ data class Room(
+@@ -50,23 +57,68 @@ object Api {
+         }
+         override fun loadForRequest(url: HttpUrl): List<Cookie> = synchronized(store) { store[url.host].orEmpty() }
+     }
+-    private val http = OkHttpClient.Builder().cookieJar(jar).callTimeout(6, TimeUnit.SECONDS).build()
+-    private val probe = http.newBuilder().callTimeout(2500, TimeUnit.MILLISECONDS).build()
++    private val http = OkHttpClient.Builder().cookieJar(jar).callTimeout(10, TimeUnit.SECONDS).build()
++    // LAN answers in milliseconds, so fail fast. Funnel needs DNS + TLS + relay on a cold mobile-data
++    // connection, which routinely takes more than 2.5 s -- give it room.
++    private val lanProbe = http.newBuilder().callTimeout(1500, TimeUnit.MILLISECONDS).build()
++    private val wanProbe = http.newBuilder().callTimeout(8000, TimeUnit.MILLISECONDS).build()
+ 
+     @Volatile private var base: String? = null
+     @Volatile private var creds: Pair<String, String>? = null
++    private val resolveLock = Mutex()   // dashboard + room screens poll in parallel: probe only once
++
++    /** "" = checking, "LAN", "Funnel", "OFFLINE". Drives the chip in the UI. */
++    private val _route = MutableStateFlow("")
++    val route: StateFlow<String> = _route
++
++    private const val TAG = "cycierge"
++    private class Probe(val name: String, val root: String, val client: OkHttpClient)
++
++    /** null = reachable, otherwise a short reason (shown to the user and in logcat). */
++    private fun probe(p: Probe): String? = try {
++        p.client.newCall(Request.Builder().url("${p.root}${Config.APP_PATH}/admin/api/ping.php").build())
++            .execute().use { r ->
++                val body = r.body?.string().orEmpty()
++                // body check rejects captive portals / other devices that happen to answer on that IP
++                if (r.isSuccessful && body.contains("\"ok\"")) null else "HTTP ${r.code}"
++            }
++    } catch (e: IOException) { e.message ?: e.javaClass.simpleName }
+ 
+-    private fun reachable(root: String) = try {
+-        probe.newCall(Request.Builder().url("$root${Config.APP_PATH}/admin/api/ping.php").build())
+-            .execute().use { it.isSuccessful }
+-    } catch (e: IOException) { false }
++    /** Does this phone have an IPv4 address on the Pi's /24? Only used to pick which route to try first. */
++    private fun onLanSubnet(): Boolean = try {
++        val prefix = Config.LAN.substringAfter("://").substringBeforeLast('.') + "."
++        NetworkInterface.getNetworkInterfaces().toList().any { ni ->
++            ni.isUp && ni.inetAddresses.toList().any { it is Inet4Address && it.hostAddress?.startsWith(prefix) == true }
++        }
++    } catch (e: Exception) { true }
++
++    private fun pick(): String {
++        val lan = Probe("LAN", Config.LAN.trimEnd('/'), lanProbe)
++        val wan = Probe("Funnel", Config.TAILSCALE.trimEnd('/'), wanProbe)
++        // On the Pi's subnet: LAN first. Anywhere else: Funnel first. Either way the other one is the fallback.
++        val order = if (onLanSubnet()) listOf(lan, wan) else listOf(wan, lan)
++        val fails = ArrayList<String>()
++        for (p in order) {
++            val why = probe(p)
++            if (why == null) {
++                Log.i(TAG, "route=${p.name} ${p.root}")
++                _route.value = p.name
++                return p.root
++            }
++            Log.w(TAG, "${p.name} probe failed: $why (${p.root})")
++            fails += "${p.name}: $why"
++        }
++        _route.value = "OFFLINE"
++        throw IOException("Pi unreachable - " + fails.joinToString("; "))
++    }
+ 
+-    /** LAN first (2.5 s probe), then Tailscale. */
+     suspend fun resolveBase(): String = withContext(Dispatchers.IO) {
+-        base ?: (listOf(Config.LAN, Config.TAILSCALE).firstOrNull { reachable(it) }
+-            ?: throw IOException("Pi unreachable (LAN and Tailscale)")).also { base = it }
++        base ?: resolveLock.withLock { base ?: pick().also { base = it } }
+     }
+ 
++    /** Forget the chosen route so the next call re-probes. MainActivity calls this on every network change. */
++    fun invalidate() { base = null; _route.value = "" }
++
+     suspend fun login(user: String, pass: String): Boolean = withContext(Dispatchers.IO) {
+         val url = resolveBase() + Config.APP_PATH + "/admin/api/login.php"
+         val body = JSONObject().put("username", user).put("password", pass).toString().toRequestBody(json)
+diff --git a/android-admin/app/src/main/java/com/cycierge/admin/Config.kt.example b/android-admin/app/src/main/java/com/cycierge/admin/Config.kt.example
+index 0326a65..7d801c1 100644
+--- a/android-admin/app/src/main/java/com/cycierge/admin/Config.kt.example
++++ b/android-admin/app/src/main/java/com/cycierge/admin/Config.kt.example
+@@ -2,7 +2,7 @@ package com.cycierge.admin
+ 
+ object Config {
+     const val LAN = "http://192.168.0.XXX"                      // Pi static IP
+-    const val TAILSCALE = "https://cycierge.YOURTAILNET.ts.net" // Tailscale Serve URL
++    const val TAILSCALE = "https://cycierge.YOURTAILNET.ts.net" // Funnel URL: must be https://, no path, no trailing slash
+     // URL path where cam.php lives. If it's http://PI/cycierge/cam.php -> "/cycierge". If at web root -> "".
+     const val APP_PATH = "/cycierge"
+ }
+diff --git a/android-admin/app/src/main/java/com/cycierge/admin/MainActivity.kt b/android-admin/app/src/main/java/com/cycierge/admin/MainActivity.kt
+index 75cf84d..8e24fc5 100644
+--- a/android-admin/app/src/main/java/com/cycierge/admin/MainActivity.kt
++++ b/android-admin/app/src/main/java/com/cycierge/admin/MainActivity.kt
+@@ -1,5 +1,7 @@
+ package com.cycierge.admin
+ 
++import android.net.ConnectivityManager
++import android.net.Network
+ import android.os.Bundle
+ import androidx.activity.ComponentActivity
+ import androidx.activity.compose.BackHandler
+@@ -33,8 +35,15 @@ import kotlinx.coroutines.delay
+ import kotlinx.coroutines.launch
+ 
+ class MainActivity : ComponentActivity() {
++    // Wi-Fi <-> mobile data (or a different Wi-Fi): forget the cached route so it is re-probed.
++    private val netCb = object : ConnectivityManager.NetworkCallback() {
++        override fun onAvailable(network: Network) { Api.invalidate() }
++        override fun onLost(network: Network) { Api.invalidate() }
++    }
++
+     override fun onCreate(savedInstanceState: Bundle?) {
+         super.onCreate(savedInstanceState)
++        getSystemService(ConnectivityManager::class.java).registerDefaultNetworkCallback(netCb)
+         window.statusBarColor = Cy.Navy.toArgb()
+         window.navigationBarColor = Cy.Navy.toArgb()
+         WindowCompat.getInsetsController(window, window.decorView).apply {
+@@ -47,6 +56,11 @@ class MainActivity : ComponentActivity() {
+             }
+         }
+     }
++
++    override fun onDestroy() {
++        getSystemService(ConnectivityManager::class.java).unregisterNetworkCallback(netCb)
++        super.onDestroy()
++    }
+ }
+ 
+ @Composable
+@@ -97,6 +111,9 @@ fun LoginScreen(onOk: () -> Unit) {
+     var busy by remember { mutableStateOf(false) }
+     val scope = rememberCoroutineScope()
+ 
++    // Probe in the background while the login form is showing; cheap when the route is already cached.
++    LaunchedEffect(Unit) { while (true) { runCatching { Api.resolveBase() }; delay(5000) } }
++
+     Column(
+         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 28.dp, vertical = 32.dp),
+         verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally
+@@ -109,6 +126,7 @@ fun LoginScreen(onOk: () -> Unit) {
+         }
+         Text("Admin Login", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+         Spacer(Modifier.height(8.dp))
++        RouteChip()
+ 
+         FieldLabel("Username")
+         OutlinedTextField(user, { user = it }, singleLine = true, shape = RoundedCornerShape(12.dp),
+@@ -253,7 +271,7 @@ fun DashboardScreen(onOpen: (Room) -> Unit, onEdit: (Room) -> Unit, onReports: (
+     Column(Modifier.fillMaxSize()) {
+         CyTopBar(
+             start = { Wordmark(20.sp) },
+-            end = { RoundIcon(Ic.Logout, "Log out", onLogout) }
++            end = { RouteChip(); Spacer(Modifier.width(8.dp)); RoundIcon(Ic.Logout, "Log out", onLogout) }
+         )
+         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(18.dp)) {
+             Hero("Admin management", "All", "rooms")
+diff --git a/android-admin/app/src/main/java/com/cycierge/admin/Ui.kt b/android-admin/app/src/main/java/com/cycierge/admin/Ui.kt
+index dcf0649..48cfdd1 100644
+--- a/android-admin/app/src/main/java/com/cycierge/admin/Ui.kt
++++ b/android-admin/app/src/main/java/com/cycierge/admin/Ui.kt
+@@ -16,6 +16,7 @@ import androidx.compose.material3.Icon
+ import androidx.compose.material3.LocalContentColor
+ import androidx.compose.material3.Text
+ import androidx.compose.runtime.Composable
++import androidx.compose.runtime.collectAsState
+ import androidx.compose.runtime.getValue
+ import androidx.compose.ui.Alignment
+ import androidx.compose.ui.Modifier
+@@ -195,6 +196,26 @@ fun BatteryChip(pct: Int) {
+     }
+ }
+ 
++/** Shows which route the app is using right now: LAN, REMOTE (Tailscale Funnel), OFFLINE. */
++@Composable
++fun RouteChip(modifier: Modifier = Modifier) {
++    val route by Api.route.collectAsState()
++    val (label, dot) = when (route) {
++        "LAN" -> "LAN" to Cy.Ok
++        "Funnel" -> "REMOTE" to Cy.Amber
++        "OFFLINE" -> "OFFLINE" to Cy.Low
++        else -> "CHECKING" to Cy.Mute
++    }
++    Row(
++        modifier.clip(CircleShape).background(Color(0xB30B1F3A)).padding(horizontal = 10.dp, vertical = 4.dp),
++        verticalAlignment = Alignment.CenterVertically
++    ) {
++        Box(Modifier.size(8.dp).clip(CircleShape).background(dot))
++        Spacer(Modifier.width(6.dp))
++        Text(label, color = Cy.Cream, fontSize = 11.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 1.sp)
++    }
++}
++
+ @Composable
+ fun LiveBadge(label: String, live: Boolean, modifier: Modifier = Modifier) {
+     val t = rememberInfiniteTransition(label = "pulse")

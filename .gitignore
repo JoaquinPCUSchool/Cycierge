@@ -7,3 +7,8 @@ config.php
 *.env
 
 .idea/
+
+.gradle/
+build/
+local.properties
+*.apk

@@ -1,32 +1,22 @@
-// esp camera
+// ESP32-CAM (AI Thinker) MJPEG live stream
 
 #include "esp_camera.h"
-#include "img_converters.h"
 #include <WiFi.h>
 #include <WebServer.h>
-
 
 //        TENANT  RPI   ADMIN
 //ROOM 1: 111     112   113
 //ROOM 2: 121     122   123
 
-
-IPAddress local_IP(192, 168, 0, 122);
+IPAddress local_IP(192, 168, 0, 112);
 IPAddress gateway(192, 168, 0, 1);
 IPAddress subnet(255, 255, 255, 0);
 IPAddress primaryDNS(8, 8, 8, 8);
 
-// =====================================================
-// WiFi
-// =====================================================
-
 const char *ssid = "samplemesh";
 const char *password = "12345678";
 
-// =====================================================
 // AI-Thinker ESP32-CAM pins
-// =====================================================
-
 #define PWDN_GPIO_NUM 32
 #define RESET_GPIO_NUM -1
 #define XCLK_GPIO_NUM 0
@@ -46,16 +36,14 @@ const char *password = "12345678";
 #define HREF_GPIO_NUM 23
 #define PCLK_GPIO_NUM 22
 
-// =====================================================
-
 WebServer server(80);
 
-// =====================================================
+// ---------------------------------------------------------
 // Camera setup
-// =====================================================
-
-void setupCamera() {
+// ---------------------------------------------------------
+bool setupCamera() {
   camera_config_t config;
+  memset(&config, 0, sizeof(config));  // important: clear garbage values
 
   config.ledc_channel = LEDC_CHANNEL_0;
   config.ledc_timer = LEDC_TIMER_0;
@@ -81,67 +69,60 @@ void setupCamera() {
   config.pin_reset = RESET_GPIO_NUM;
 
   config.xclk_freq_hz = 20000000;
-
-  // IMPORTANT
-  // Your sensor works with RGB565
   config.pixel_format = PIXFORMAT_JPEG;
-
-  // Start with QVGA for stability
   config.frame_size = FRAMESIZE_QVGA;
-
   config.jpeg_quality = 12;
 
   if (psramFound()) {
     config.fb_count = 2;
+    config.fb_location = CAMERA_FB_IN_PSRAM;
     config.grab_mode = CAMERA_GRAB_LATEST;
   } else {
+    Serial.println("No PSRAM found, using DRAM");
     config.fb_count = 1;
+    config.fb_location = CAMERA_FB_IN_DRAM;
+    config.grab_mode = CAMERA_GRAB_WHEN_EMPTY;
   }
 
   esp_err_t err = esp_camera_init(&config);
-
   if (err != ESP_OK) {
-    Serial.printf(
-      "Camera initialization failed: 0x%x\n",
-      err);
-
-    while (true) {
-      delay(1000);
-    }
+    Serial.printf("Camera initialization failed: 0x%x\n", err);
+    return false;
   }
 
   Serial.println("Camera initialized!");
 
   sensor_t *sensor = esp_camera_sensor_get();
-
   if (sensor) {
-    Serial.printf(
-      "Sensor PID: 0x%04X\n",
-      sensor->id.PID);
+    Serial.printf("Sensor PID: 0x%04X\n", sensor->id.PID);
   }
+  return true;
 }
 
-// =====================================================
-// Send one JPEG image
-// =====================================================
-
+// ---------------------------------------------------------
+// Single JPEG snapshot
+// ---------------------------------------------------------
 void handleJPG() {
   camera_fb_t *fb = esp_camera_fb_get();
   if (!fb) {
     server.send(500, "text/plain", "Camera capture failed");
     return;
   }
-  server.sendHeader("Content-Length", String(fb->len));
-  server.send(200, "image/jpeg", "");
+
   WiFiClient client = server.client();
+  client.printf(
+    "HTTP/1.1 200 OK\r\n"
+    "Content-Type: image/jpeg\r\n"
+    "Content-Length: %u\r\n"
+    "Connection: close\r\n\r\n",
+    (unsigned int)fb->len);
   client.write(fb->buf, fb->len);
   esp_camera_fb_return(fb);
 }
 
-// =====================================================
+// ---------------------------------------------------------
 // MJPEG stream
-// =====================================================
-
+// ---------------------------------------------------------
 void handleStream() {
   WiFiClient client = server.client();
 
@@ -153,82 +134,54 @@ void handleStream() {
     "Connection: close\r\n\r\n");
 
   while (client.connected()) {
-
     camera_fb_t *fb = esp_camera_fb_get();
     if (!fb) {
       Serial.println("Camera capture failed");
       break;
     }
+
     client.printf(
       "--frame\r\nContent-Type: image/jpeg\r\nContent-Length: %u\r\n\r\n",
       (unsigned int)fb->len);
     client.write(fb->buf, fb->len);
     client.print("\r\n");
     esp_camera_fb_return(fb);
+
     delay(50);
   }
 }
 
-// =====================================================
-// ESP32 web page
-// =====================================================
-
+// ---------------------------------------------------------
+// Web page
+// ---------------------------------------------------------
 void handleRoot() {
   String page = R"rawliteral(
 <!DOCTYPE html>
-
 <html>
-
 <head>
-<meta name="viewport"
-      content="width=device-width,initial-scale=1">
-
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <title>ESP32 Camera</title>
-
 <style>
-
-body {
-    background: #111;
-    color: white;
-    font-family: Arial;
-    text-align: center;
-}
-
-img {
-    width: 100%;
-    max-width: 640px;
-}
-
+body { background: #111; color: white; font-family: Arial; text-align: center; }
+img { width: 100%; max-width: 640px; }
 </style>
-
 </head>
-
 <body>
-
 <h1>ESP32-CAM</h1>
-
 <img src="/stream">
-
 <p>Live video</p>
-
 </body>
-
 </html>
 )rawliteral";
 
-  server.send(
-    200,
-    "text/html",
-    page);
+  server.send(200, "text/html", page);
 }
 
-// =====================================================
+// ---------------------------------------------------------
 // Setup
-// =====================================================
-
+// ---------------------------------------------------------
 void setup() {
   Serial.begin(115200);
-
   delay(1000);
 
   Serial.println();
@@ -236,72 +189,40 @@ void setup() {
   Serial.println("ESP32-CAM LIVE STREAM");
   Serial.println("==============================");
 
-  if (!WiFi.config(local_IP, gateway, subnet, primaryDNS)) {
-    Serial.println("Configuration failed");
-    return;
+  Serial.printf("PSRAM found: %s, free: %d bytes\n",
+                psramFound() ? "yes" : "no", ESP.getFreePsram());
+  Serial.printf("Free heap: %d bytes\n", ESP.getFreeHeap());
+
+  if (!setupCamera()) {
+    Serial.println("Halting: camera failed to start.");
+    while (true) delay(1000);
   }
 
-  setupCamera();
+  WiFi.mode(WIFI_STA);
+  if (!WiFi.config(local_IP, gateway, subnet, primaryDNS)) {
+    Serial.println("Static IP configuration failed");
+  }
 
-  // =================================================
-  // WiFi
-  // =================================================
-
-  WiFi.begin(
-    ssid,
-    password);
-
-  Serial.print(
-    "Connecting to WiFi");
-
-  while (
-    WiFi.status() != WL_CONNECTED) {
+  WiFi.begin(ssid, password);
+  Serial.print("Connecting to WiFi");
+  while (WiFi.status() != WL_CONNECTED) {
     delay(500);
-
     Serial.print(".");
   }
 
   Serial.println();
-  Serial.println(
-    "WiFi connected!");
+  Serial.println("WiFi connected!");
+  Serial.print("ESP32-CAM IP: ");
+  Serial.println(WiFi.localIP());
 
-  Serial.print(
-    "ESP32-CAM IP: ");
-
-  Serial.println(
-    WiFi.localIP());
-
-  // =================================================
-  // HTTP routes
-  // =================================================
-
-  server.on(
-    "/",
-    HTTP_GET,
-    handleRoot);
-
-  server.on(
-    "/jpg",
-    HTTP_GET,
-    handleJPG);
-
-  server.on(
-    "/stream",
-    HTTP_GET,
-    handleStream);
-
+  server.on("/", HTTP_GET, handleRoot);
+  server.on("/jpg", HTTP_GET, handleJPG);
+  server.on("/stream", HTTP_GET, handleStream);
   server.begin();
 
-  Serial.println(
-    "HTTP server started");
-
-  Serial.println(
-    "Open the IP address in a browser.");
+  Serial.println("HTTP server started");
+  Serial.println("Open the IP address in a browser.");
 }
-
-// =====================================================
-// Loop
-// =====================================================
 
 void loop() {
   server.handleClient();

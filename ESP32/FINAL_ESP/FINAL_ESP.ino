@@ -8,7 +8,7 @@
 #define TXD2 27
 
 String ipVar = "192.168.0.100";
-String roomID = "2";
+String roomID = "1";
 
 int voltage;
 int status;
