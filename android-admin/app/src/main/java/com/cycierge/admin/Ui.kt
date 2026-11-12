@@ -1,5 +1,7 @@
 package com.cycierge.admin
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -16,13 +18,16 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -77,6 +82,7 @@ object Ic {
     val Prev = strokeIcon("prev", "M15 6l-6 6 6 6")
     val Trash = strokeIcon("trash", "M4 7h16", "M10 11v6", "M14 11v6", "M6 7l1 13h10l1-13", "M9 7V4h6v3")
     val Shield = strokeIcon("shield", "M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z")
+    val Refresh = strokeIcon("refresh", "M23 4v6h-6", "M1 20v-6h6", "M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15")
 }
 
 @Composable
@@ -115,6 +121,29 @@ fun RoundIcon(icon: ImageVector, desc: String, onClick: () -> Unit, tint: Color 
         Modifier.size(40.dp).clip(RoundedCornerShape(12.dp)).background(Color(0x14FFFFFF)).clickable(onClick = onClick),
         contentAlignment = Alignment.Center
     ) { Icon(icon, contentDescription = desc, modifier = Modifier.size(22.dp), tint = tint) }
+}
+
+/** Round top-bar button that spins (and ignores taps) while [busy]. */
+@Composable
+fun RefreshButton(busy: Boolean, onClick: () -> Unit) {
+    val rot = remember { Animatable(0f) }
+    LaunchedEffect(busy) {
+        if (busy) {
+            while (true) { rot.snapTo(0f); rot.animateTo(360f, tween(900, easing = LinearEasing)) }
+        } else {
+            rot.snapTo(0f)
+        }
+    }
+    Box(
+        Modifier.size(40.dp).clip(RoundedCornerShape(12.dp)).background(Color(0x14FFFFFF))
+            .clickable(enabled = !busy, onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(
+            Ic.Refresh, contentDescription = "Refresh",
+            modifier = Modifier.size(22.dp).rotate(rot.value), tint = if (busy) Cy.Amber else Cy.Cream
+        )
+    }
 }
 
 @Composable

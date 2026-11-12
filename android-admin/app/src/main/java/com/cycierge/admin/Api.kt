@@ -119,6 +119,19 @@ object Api {
     /** Forget the chosen route so the next call re-probes. MainActivity calls this on every network change. */
     fun invalidate() { base = null; _route.value = "" }
 
+    /**
+     * Manual refresh ("reconnect now"). After an internet or power cut the cached route and the keep-alive
+     * sockets can be dead, and a call stuck on one holds everything up until its timeout. So: abort whatever
+     * is in flight, drop idle sockets, forget the route and probe again right away.
+     * Returns true if the Pi answered on LAN or Funnel.
+     */
+    suspend fun reconnect(): Boolean = withContext(Dispatchers.IO) {
+        http.dispatcher.cancelAll()
+        http.connectionPool.evictAll()
+        base = null; _route.value = ""
+        try { resolveBase(); true } catch (e: IOException) { false }
+    }
+
     suspend fun login(user: String, pass: String): Boolean = withContext(Dispatchers.IO) {
         val url = resolveBase() + Config.APP_PATH + "/admin/api/login.php"
         val body = JSONObject().put("username", user).put("password", pass).toString().toRequestBody(json)

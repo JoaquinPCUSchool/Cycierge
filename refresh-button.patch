@@ -1,0 +1,262 @@
+diff --git a/android-admin/app/src/main/java/com/cycierge/admin/Api.kt b/android-admin/app/src/main/java/com/cycierge/admin/Api.kt
+index 3194b29..b422d13 100644
+--- a/android-admin/app/src/main/java/com/cycierge/admin/Api.kt
++++ b/android-admin/app/src/main/java/com/cycierge/admin/Api.kt
+@@ -119,6 +119,19 @@ object Api {
+     /** Forget the chosen route so the next call re-probes. MainActivity calls this on every network change. */
+     fun invalidate() { base = null; _route.value = "" }
+ 
++    /**
++     * Manual refresh ("reconnect now"). After an internet or power cut the cached route and the keep-alive
++     * sockets can be dead, and a call stuck on one holds everything up until its timeout. So: abort whatever
++     * is in flight, drop idle sockets, forget the route and probe again right away.
++     * Returns true if the Pi answered on LAN or Funnel.
++     */
++    suspend fun reconnect(): Boolean = withContext(Dispatchers.IO) {
++        http.dispatcher.cancelAll()
++        http.connectionPool.evictAll()
++        base = null; _route.value = ""
++        try { resolveBase(); true } catch (e: IOException) { false }
++    }
++
+     suspend fun login(user: String, pass: String): Boolean = withContext(Dispatchers.IO) {
+         val url = resolveBase() + Config.APP_PATH + "/admin/api/login.php"
+         val body = JSONObject().put("username", user).put("password", pass).toString().toRequestBody(json)
+diff --git a/android-admin/app/src/main/java/com/cycierge/admin/MainActivity.kt b/android-admin/app/src/main/java/com/cycierge/admin/MainActivity.kt
+index ab9d0eb..4b1942a 100644
+--- a/android-admin/app/src/main/java/com/cycierge/admin/MainActivity.kt
++++ b/android-admin/app/src/main/java/com/cycierge/admin/MainActivity.kt
+@@ -31,6 +31,8 @@ import androidx.compose.ui.unit.dp
+ import androidx.compose.ui.text.withStyle
+ import androidx.compose.ui.unit.sp
+ import androidx.core.view.WindowCompat
++import kotlinx.coroutines.CancellationException
++import kotlinx.coroutines.CoroutineScope
+ import kotlinx.coroutines.delay
+ import kotlinx.coroutines.launch
+ 
+@@ -92,6 +94,37 @@ fun App() {
+     }
+ }
+ 
++// ---------------------------------------------------------------- refresh
++/**
++ * Backs the refresh button. [trigger] reconnects to the Pi right now (see Api.reconnect) and bumps [key];
++ * screens use [key] as a LaunchedEffect key, so their polling loops restart and reload immediately
++ * instead of waiting out the 4-5 s delay.
++ */
++@Stable
++internal class RefreshState(private val scope: CoroutineScope) {
++    var key by mutableStateOf(0); private set
++    var busy by mutableStateOf(false); private set
++
++    fun trigger() {
++        if (busy) return
++        scope.launch {
++            busy = true
++            val t0 = System.currentTimeMillis()
++            Api.reconnect()
++            key++
++            val left = 450 - (System.currentTimeMillis() - t0)   // keep the spinner visible on a fast LAN
++            if (left > 0) delay(left)
++            busy = false
++        }
++    }
++}
++
++@Composable
++internal fun rememberRefresh(): RefreshState {
++    val scope = rememberCoroutineScope()
++    return remember { RefreshState(scope) }
++}
++
+ // ---------------------------------------------------------------- login
+ @Composable
+ private fun FieldLabel(text: String) {
+@@ -114,6 +147,7 @@ fun LoginScreen(onOk: () -> Unit) {
+     var err by remember { mutableStateOf<String?>(null) }
+     var busy by remember { mutableStateOf(false) }
+     val scope = rememberCoroutineScope()
++    val refresh = rememberRefresh()
+ 
+     // Probe in the background while the login form is showing; cheap when the route is already cached.
+     LaunchedEffect(Unit) { while (true) { runCatching { Api.resolveBase() }; delay(5000) } }
+@@ -130,7 +164,10 @@ fun LoginScreen(onOk: () -> Unit) {
+         }
+         Text("Admin Login", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+         Spacer(Modifier.height(8.dp))
+-        RouteChip()
++        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
++            RouteChip()
++            RefreshButton(refresh.busy) { refresh.trigger() }
++        }
+ 
+         FieldLabel("Username")
+         OutlinedTextField(user, { user = it }, singleLine = true, shape = RoundedCornerShape(12.dp),
+@@ -331,10 +368,12 @@ fun DashboardScreen(onOpen: (Room) -> Unit, onEdit: (Room) -> Unit, onNew: (Room
+     var confirm by remember { mutableStateOf<Room?>(null) }
+     var tick by remember { mutableStateOf(0) }
+     val scope = rememberCoroutineScope()
++    val refresh = rememberRefresh()
+ 
+-    LaunchedEffect(Unit) {
++    LaunchedEffect(refresh.key) {
+         while (true) {
+             try { rooms = Api.rooms(); err = null }
++            catch (e: CancellationException) { throw e }
+             catch (e: AuthException) { onLogout(); return@LaunchedEffect }
+             catch (e: Exception) { err = e.message ?: "Error" }
+             tick++
+@@ -345,7 +384,7 @@ fun DashboardScreen(onOpen: (Room) -> Unit, onEdit: (Room) -> Unit, onNew: (Room
+     Column(Modifier.fillMaxSize()) {
+         CyTopBar(
+             start = { Wordmark(20.sp) },
+-            end = { RouteChip(); Spacer(Modifier.width(8.dp)); RoundIcon(Ic.Logout, "Log out", onLogout) }
++            end = { RouteChip(); RefreshButton(refresh.busy) { refresh.trigger() }; RoundIcon(Ic.Logout, "Log out", onLogout) }
+         )
+         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(18.dp)) {
+             Hero("Admin management", "All", "rooms")
+@@ -419,9 +458,10 @@ fun RoomScreen(room: Room, onBack: () -> Unit, onEdit: (Room) -> Unit, onNew: (R
+     var confirmClear by remember { mutableStateOf(false) }
+     var confirmUnlock by remember { mutableStateOf(false) }
+     val scope = rememberCoroutineScope()
++    val refresh = rememberRefresh()
+ 
+     // Camera: one snapshot every 1.5 s while this screen is open.
+-    LaunchedEffect(room.id) {
++    LaunchedEffect(room.id, refresh.key) {
+         while (true) {
+             val b = Api.snapshot(room.id)
+             if (b != null) { frame = b; camDown = false } else camDown = true
+@@ -430,14 +470,16 @@ fun RoomScreen(room: Room, onBack: () -> Unit, onEdit: (Room) -> Unit, onNew: (R
+     }
+     suspend fun loadLogs() {
+         try { logs = Api.logs(room.id); err = null }
++        catch (e: CancellationException) { throw e }
+         catch (e: AuthException) { onLogout() }
+         catch (e: Exception) { err = e.message }
+     }
+-    LaunchedEffect(room.id) { while (true) { loadLogs(); delay(5000) } }
++    LaunchedEffect(room.id, refresh.key) { while (true) { loadLogs(); delay(5000) } }
+     // Battery / "Unlocking…" state.
+-    LaunchedEffect(room.id) {
++    LaunchedEffect(room.id, refresh.key) {
+         while (true) {
+             try { Api.rooms().firstOrNull { it.id == room.id }?.let { cur = it } }
++            catch (e: CancellationException) { throw e }
+             catch (e: AuthException) { onLogout(); return@LaunchedEffect }
+             catch (e: Exception) { }
+             delay(4000)
+@@ -447,7 +489,7 @@ fun RoomScreen(room: Room, onBack: () -> Unit, onEdit: (Room) -> Unit, onNew: (R
+     Column(Modifier.fillMaxSize()) {
+         CyTopBar(
+             start = { RoundIcon(Ic.Back, "Back", onBack); Wordmark(20.sp) },
+-            end = { BatteryChip(cur.battery) }
++            end = { RefreshButton(refresh.busy) { refresh.trigger() }; BatteryChip(cur.battery) }
+         )
+         LazyColumn(
+             Modifier.weight(1f), contentPadding = PaddingValues(18.dp),
+diff --git a/android-admin/app/src/main/java/com/cycierge/admin/ReportScreen.kt b/android-admin/app/src/main/java/com/cycierge/admin/ReportScreen.kt
+index 15729f0..f9f5dc3 100644
+--- a/android-admin/app/src/main/java/com/cycierge/admin/ReportScreen.kt
++++ b/android-admin/app/src/main/java/com/cycierge/admin/ReportScreen.kt
+@@ -17,6 +17,7 @@ import androidx.compose.ui.text.font.FontWeight
+ import androidx.compose.ui.text.style.TextAlign
+ import androidx.compose.ui.unit.dp
+ import androidx.compose.ui.unit.sp
++import kotlinx.coroutines.CancellationException
+ import java.time.LocalDate
+ 
+ private val PERIODS = listOf("week" to "Weekly", "month" to "Monthly", "year" to "Yearly")
+@@ -35,11 +36,13 @@ fun ReportScreen(onBack: () -> Unit, onLogout: () -> Unit) {
+     var err by remember { mutableStateOf<String?>(null) }
+     var loading by remember { mutableStateOf(false) }
+     val period = PERIODS[tab].first
++    val refresh = rememberRefresh()
+ 
+-    // Reload whenever the period type or the date changes.
+-    LaunchedEffect(tab, anchor) {
++    // Reload whenever the period type or the date changes, or the refresh button is pressed.
++    LaunchedEffect(tab, anchor, refresh.key) {
+         loading = true
+         try { report = Api.report(period, anchor.toString()); err = null }
++        catch (e: CancellationException) { throw e }
+         catch (e: AuthException) { onLogout(); return@LaunchedEffect }
+         catch (e: Exception) { err = e.message ?: "Error" }
+         loading = false
+@@ -48,7 +51,7 @@ fun ReportScreen(onBack: () -> Unit, onLogout: () -> Unit) {
+     Column(Modifier.fillMaxSize()) {
+         CyTopBar(
+             start = { RoundIcon(Ic.Back, "Back", onBack); Wordmark(20.sp) },
+-            end = { Text("Reports", color = Cy.Mute, fontWeight = FontWeight.Bold) }
++            end = { Text("Reports", color = Cy.Mute, fontWeight = FontWeight.Bold); RefreshButton(refresh.busy) { refresh.trigger() } }
+         )
+         val r = report
+         LazyColumn(
+diff --git a/android-admin/app/src/main/java/com/cycierge/admin/Ui.kt b/android-admin/app/src/main/java/com/cycierge/admin/Ui.kt
+index 48cfdd1..ad79d94 100644
+--- a/android-admin/app/src/main/java/com/cycierge/admin/Ui.kt
++++ b/android-admin/app/src/main/java/com/cycierge/admin/Ui.kt
+@@ -1,5 +1,7 @@
+ package com.cycierge.admin
+ 
++import androidx.compose.animation.core.Animatable
++import androidx.compose.animation.core.LinearEasing
+ import androidx.compose.animation.core.RepeatMode
+ import androidx.compose.animation.core.animateFloat
+ import androidx.compose.animation.core.infiniteRepeatable
+@@ -16,13 +18,16 @@ import androidx.compose.material3.Icon
+ import androidx.compose.material3.LocalContentColor
+ import androidx.compose.material3.Text
+ import androidx.compose.runtime.Composable
++import androidx.compose.runtime.LaunchedEffect
+ import androidx.compose.runtime.collectAsState
+ import androidx.compose.runtime.getValue
++import androidx.compose.runtime.remember
+ import androidx.compose.ui.Alignment
+ import androidx.compose.ui.Modifier
+ import androidx.compose.ui.draw.alpha
+ import androidx.compose.ui.draw.clip
+ import androidx.compose.ui.draw.drawBehind
++import androidx.compose.ui.draw.rotate
+ import androidx.compose.ui.geometry.CornerRadius
+ import androidx.compose.ui.geometry.Offset
+ import androidx.compose.ui.geometry.Size
+@@ -77,6 +82,7 @@ object Ic {
+     val Prev = strokeIcon("prev", "M15 6l-6 6 6 6")
+     val Trash = strokeIcon("trash", "M4 7h16", "M10 11v6", "M14 11v6", "M6 7l1 13h10l1-13", "M9 7V4h6v3")
+     val Shield = strokeIcon("shield", "M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z")
++    val Refresh = strokeIcon("refresh", "M23 4v6h-6", "M1 20v-6h6", "M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15")
+ }
+ 
+ @Composable
+@@ -117,6 +123,29 @@ fun RoundIcon(icon: ImageVector, desc: String, onClick: () -> Unit, tint: Color
+     ) { Icon(icon, contentDescription = desc, modifier = Modifier.size(22.dp), tint = tint) }
+ }
+ 
++/** Round top-bar button that spins (and ignores taps) while [busy]. */
++@Composable
++fun RefreshButton(busy: Boolean, onClick: () -> Unit) {
++    val rot = remember { Animatable(0f) }
++    LaunchedEffect(busy) {
++        if (busy) {
++            while (true) { rot.snapTo(0f); rot.animateTo(360f, tween(900, easing = LinearEasing)) }
++        } else {
++            rot.snapTo(0f)
++        }
++    }
++    Box(
++        Modifier.size(40.dp).clip(RoundedCornerShape(12.dp)).background(Color(0x14FFFFFF))
++            .clickable(enabled = !busy, onClick = onClick),
++        contentAlignment = Alignment.Center
++    ) {
++        Icon(
++            Ic.Refresh, contentDescription = "Refresh",
++            modifier = Modifier.size(22.dp).rotate(rot.value), tint = if (busy) Cy.Amber else Cy.Cream
++        )
++    }
++}
++
+ @Composable
+ fun IconTile(icon: ImageVector, size: Dp = 40.dp, tint: Color = Cy.Amber, bg: Color = Color(0x26FCB415), round: Boolean = false) {
+     Box(

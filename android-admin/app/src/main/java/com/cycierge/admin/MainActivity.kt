@@ -31,6 +31,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowCompat
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -92,6 +94,37 @@ fun App() {
     }
 }
 
+// ---------------------------------------------------------------- refresh
+/**
+ * Backs the refresh button. [trigger] reconnects to the Pi right now (see Api.reconnect) and bumps [key];
+ * screens use [key] as a LaunchedEffect key, so their polling loops restart and reload immediately
+ * instead of waiting out the 4-5 s delay.
+ */
+@Stable
+internal class RefreshState(private val scope: CoroutineScope) {
+    var key by mutableStateOf(0); private set
+    var busy by mutableStateOf(false); private set
+
+    fun trigger() {
+        if (busy) return
+        scope.launch {
+            busy = true
+            val t0 = System.currentTimeMillis()
+            Api.reconnect()
+            key++
+            val left = 450 - (System.currentTimeMillis() - t0)   // keep the spinner visible on a fast LAN
+            if (left > 0) delay(left)
+            busy = false
+        }
+    }
+}
+
+@Composable
+internal fun rememberRefresh(): RefreshState {
+    val scope = rememberCoroutineScope()
+    return remember { RefreshState(scope) }
+}
+
 // ---------------------------------------------------------------- login
 @Composable
 private fun FieldLabel(text: String) {
@@ -114,6 +147,7 @@ fun LoginScreen(onOk: () -> Unit) {
     var err by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+    val refresh = rememberRefresh()
 
     // Probe in the background while the login form is showing; cheap when the route is already cached.
     LaunchedEffect(Unit) { while (true) { runCatching { Api.resolveBase() }; delay(5000) } }
@@ -130,7 +164,10 @@ fun LoginScreen(onOk: () -> Unit) {
         }
         Text("Admin Login", fontSize = 18.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(8.dp))
-        RouteChip()
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            RouteChip()
+            RefreshButton(refresh.busy) { refresh.trigger() }
+        }
 
         FieldLabel("Username")
         OutlinedTextField(user, { user = it }, singleLine = true, shape = RoundedCornerShape(12.dp),
@@ -331,10 +368,12 @@ fun DashboardScreen(onOpen: (Room) -> Unit, onEdit: (Room) -> Unit, onNew: (Room
     var confirm by remember { mutableStateOf<Room?>(null) }
     var tick by remember { mutableStateOf(0) }
     val scope = rememberCoroutineScope()
+    val refresh = rememberRefresh()
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(refresh.key) {
         while (true) {
             try { rooms = Api.rooms(); err = null }
+            catch (e: CancellationException) { throw e }
             catch (e: AuthException) { onLogout(); return@LaunchedEffect }
             catch (e: Exception) { err = e.message ?: "Error" }
             tick++
@@ -345,7 +384,7 @@ fun DashboardScreen(onOpen: (Room) -> Unit, onEdit: (Room) -> Unit, onNew: (Room
     Column(Modifier.fillMaxSize()) {
         CyTopBar(
             start = { Wordmark(20.sp) },
-            end = { RouteChip(); Spacer(Modifier.width(8.dp)); RoundIcon(Ic.Logout, "Log out", onLogout) }
+            end = { RouteChip(); RefreshButton(refresh.busy) { refresh.trigger() }; RoundIcon(Ic.Logout, "Log out", onLogout) }
         )
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(18.dp)) {
             Hero("Admin management", "All", "rooms")
@@ -419,9 +458,10 @@ fun RoomScreen(room: Room, onBack: () -> Unit, onEdit: (Room) -> Unit, onNew: (R
     var confirmClear by remember { mutableStateOf(false) }
     var confirmUnlock by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+    val refresh = rememberRefresh()
 
     // Camera: one snapshot every 1.5 s while this screen is open.
-    LaunchedEffect(room.id) {
+    LaunchedEffect(room.id, refresh.key) {
         while (true) {
             val b = Api.snapshot(room.id)
             if (b != null) { frame = b; camDown = false } else camDown = true
@@ -430,14 +470,16 @@ fun RoomScreen(room: Room, onBack: () -> Unit, onEdit: (Room) -> Unit, onNew: (R
     }
     suspend fun loadLogs() {
         try { logs = Api.logs(room.id); err = null }
+        catch (e: CancellationException) { throw e }
         catch (e: AuthException) { onLogout() }
         catch (e: Exception) { err = e.message }
     }
-    LaunchedEffect(room.id) { while (true) { loadLogs(); delay(5000) } }
+    LaunchedEffect(room.id, refresh.key) { while (true) { loadLogs(); delay(5000) } }
     // Battery / "Unlocking…" state.
-    LaunchedEffect(room.id) {
+    LaunchedEffect(room.id, refresh.key) {
         while (true) {
             try { Api.rooms().firstOrNull { it.id == room.id }?.let { cur = it } }
+            catch (e: CancellationException) { throw e }
             catch (e: AuthException) { onLogout(); return@LaunchedEffect }
             catch (e: Exception) { }
             delay(4000)
@@ -447,7 +489,7 @@ fun RoomScreen(room: Room, onBack: () -> Unit, onEdit: (Room) -> Unit, onNew: (R
     Column(Modifier.fillMaxSize()) {
         CyTopBar(
             start = { RoundIcon(Ic.Back, "Back", onBack); Wordmark(20.sp) },
-            end = { BatteryChip(cur.battery) }
+            end = { RefreshButton(refresh.busy) { refresh.trigger() }; BatteryChip(cur.battery) }
         )
         LazyColumn(
             Modifier.weight(1f), contentPadding = PaddingValues(18.dp),

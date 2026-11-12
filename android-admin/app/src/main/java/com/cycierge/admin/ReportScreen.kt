@@ -17,6 +17,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.CancellationException
 import java.time.LocalDate
 
 private val PERIODS = listOf("week" to "Weekly", "month" to "Monthly", "year" to "Yearly")
@@ -35,11 +36,13 @@ fun ReportScreen(onBack: () -> Unit, onLogout: () -> Unit) {
     var err by remember { mutableStateOf<String?>(null) }
     var loading by remember { mutableStateOf(false) }
     val period = PERIODS[tab].first
+    val refresh = rememberRefresh()
 
-    // Reload whenever the period type or the date changes.
-    LaunchedEffect(tab, anchor) {
+    // Reload whenever the period type or the date changes, or the refresh button is pressed.
+    LaunchedEffect(tab, anchor, refresh.key) {
         loading = true
         try { report = Api.report(period, anchor.toString()); err = null }
+        catch (e: CancellationException) { throw e }
         catch (e: AuthException) { onLogout(); return@LaunchedEffect }
         catch (e: Exception) { err = e.message ?: "Error" }
         loading = false
@@ -48,7 +51,7 @@ fun ReportScreen(onBack: () -> Unit, onLogout: () -> Unit) {
     Column(Modifier.fillMaxSize()) {
         CyTopBar(
             start = { RoundIcon(Ic.Back, "Back", onBack); Wordmark(20.sp) },
-            end = { Text("Reports", color = Cy.Mute, fontWeight = FontWeight.Bold) }
+            end = { Text("Reports", color = Cy.Mute, fontWeight = FontWeight.Bold); RefreshButton(refresh.busy) { refresh.trigger() } }
         )
         val r = report
         LazyColumn(
