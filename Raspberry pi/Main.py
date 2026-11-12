@@ -34,6 +34,71 @@ cap2 = cv2.VideoCapture(URL2)
 
 
 
+BASE = "http://localhost/cycierge"
+
+
+def tenant_dialog(parent, room, new=False):
+     """Tenant dialog, same fields and rules as the Android admin app.
+     Edit tenant: Name / Username / New password (blank keeps the current one).
+     New tenant : empty form, password required; check-in is set to now and "time stayed" restarts."""
+     try:
+          rows = requests.get(BASE + "/user/getdata.php", timeout=5).json()
+     except Exception as e:
+          messagebox.showerror("Error", "Couldn't load the tenant: " + str(e))
+          return
+     cur = next((r for r in rows if str(r.get("ID")) == str(room)), {})
+     old_name = (cur.get("USERNAME") or "").strip()
+
+     if new and old_name:
+          if not messagebox.askyesno("New tenant", "Room " + str(room) + " is occupied by " + old_name +
+                                     ".\nTheir stay ends now and time stayed restarts for the new tenant.\n\nContinue?"):
+               return
+
+     win = Toplevel(parent)
+     win.title("New tenant" if new else "Edit tenant")
+     win.transient(parent)
+     win.grab_set()
+     win.resizable(False, False)
+
+     name_v = StringVar(value="" if new else (cur.get("USERNAME") or ""))
+     uid_v = StringVar(value="" if new else (cur.get("USERID") or ""))
+     pass_v = StringVar()
+
+     Label(win, text=("New tenant - room no. " if new else "Edit tenant - room no. ") + str(room),
+           font=('', 16, 'bold')).grid(row=0, column=0, columnspan=2, padx=20, pady=(20, 5))
+     Label(win, text="Name of tenant:").grid(row=1, column=0, padx=10, pady=10, sticky="e")
+     name_e = Entry(win, textvariable=name_v, width=28)
+     name_e.grid(row=1, column=1, padx=10, pady=10)
+     Label(win, text="Username (tenant login):").grid(row=2, column=0, padx=10, pady=10, sticky="e")
+     Entry(win, textvariable=uid_v, width=28).grid(row=2, column=1, padx=10, pady=10)
+     Label(win, text="Password:" if new else "New password:").grid(row=3, column=0, padx=10, pady=10, sticky="e")
+     Entry(win, textvariable=pass_v, width=28, show="*").grid(row=3, column=1, padx=10, pady=10)
+     Label(win, fg="gray", text=("Check-in time is set to now; time stayed restarts at 0." if new
+                                 else "Leave the password blank to keep the current one.")
+           ).grid(row=4, column=0, columnspan=2, padx=10)
+     err = Label(win, text="", fg="red")
+     err.grid(row=5, column=0, columnspan=2, padx=10, pady=(10, 0))
+
+     def save():
+          name, uid, pw = name_v.get().strip(), uid_v.get().strip(), pass_v.get()
+          if not name or not uid or (new and not pw):
+               err.config(text="Name, username and password are required" if new else "Name and username are required")
+               return
+          try:
+               r = requests.post(BASE + ("/user/newtenant.php" if new else "/user/edituser.php"), timeout=5,
+                                 json={"room": room, "name": name, "userid": uid, "password": pw})
+               r.raise_for_status()
+          except Exception as e:
+               err.config(text="Couldn't save: " + str(e))
+               return
+          win.destroy()
+
+     Button(win, text="CHECK IN" if new else "SAVE", command=save, bg='skyblue').grid(row=6, column=0, columnspan=2, pady=(15, 5), ipadx=40)
+     Button(win, text="CANCEL", command=win.destroy).grid(row=7, column=0, columnspan=2, pady=(0, 20), ipadx=33)
+     win.bind("<Return>", lambda e: save())
+     name_e.focus_set()
+
+
 class SampleApp(Tk):
 
      def __init__(self, *args, **kwargs):
@@ -84,68 +149,10 @@ class Main(Frame):
           
           #############################################################################################
           def btn1Func():
-              login_win = Toplevel(app)
-              login_win.title("Login")
-              login_win.geometry("300x450")
-              
-              login_win.transient(app)
-              login_win.grab_set()
+              tenant_dialog(controller, 1)
 
-              #USERNAME
-              Label(login_win, text="USERNAME:").grid(row=0, column=0, padx=10, pady=10, sticky="e")
-              usernamevar = Entry(login_win)
-              usernamevar.grid(row=0, column=1, padx=10, pady=10)
-              #USERID
-              Label(login_win, text="USERID:").grid(row=1, column=0, padx=10, pady=10, sticky="e")
-              useridvar = Entry(login_win)
-              useridvar.grid(row=1, column=1, padx=10, pady=10)
-              #USERPASS
-              Label(login_win, text="USERPASS:").grid(row=2, column=0, padx=10, pady=10, sticky="e")
-              userpassvar = Entry(login_win)
-              userpassvar.grid(row=2, column=1, padx=10, pady=10)
-              #USERPHONE
-              Label(login_win, text="USERPHONE:").grid(row=3, column=0, padx=10, pady=10, sticky="e")
-              userphonevar = Entry(login_win)
-              userphonevar.grid(row=3, column=1, padx=10, pady=10)
-              #USERMONTH
-              Label(login_win, text="MONTH:").grid(row=4, column=0, padx=10, pady=10, sticky="e")
-              usermonthvar = Entry(login_win)
-              usermonthvar.grid(row=4, column=1, padx=10, pady=10)
-              #USERDAY
-              Label(login_win, text="DAY:").grid(row=5, column=0, padx=10, pady=10, sticky="e")
-              userdayvar = Entry(login_win)
-              userdayvar.grid(row=5, column=1, padx=10, pady=10)
-              #USERYEAR
-              Label(login_win, text="YEAR:").grid(row=6, column=0, padx=10, pady=10, sticky="e")
-              useryearvar = Entry(login_win)
-              useryearvar.grid(row=6, column=1, padx=10, pady=10)
-
-
-              def validate():
-                  namevar = usernamevar.get()
-                  idvar = useridvar.get()
-                  passvar = userpassvar.get()
-                  phonevar = userphonevar.get()
-                  monthvar = usermonthvar.get()
-                  dayvar = userdayvar.get()
-                  yearvar = useryearvar.get()
-                  datevar = str(yearvar) + "-" + str(monthvar) + "-" + str(dayvar)
-                  now = datetime.now()
-                  timenowvar = str(now.strftime("%H:%M"))
-     
-                  if namevar == "" or idvar == "" or passvar == "" or phonevar == "" or monthvar == "" or dayvar == "" or yearvar == "":
-                       messagebox.showerror("Error", "Invalid credentials")
-                  else:
-                       req = requests.get("http://localhost/cycierge/user/updateuser.php?USERID='"+str(idvar)+"'&USERPASS='"+str(passvar)+"'&USERNAME='"+str(namevar)+"'&USERPHONE='"+str(phonevar)+"'&USERDATE='"+str(datevar)+"'&USERTIME='"+str(timenowvar)+"'&ID='1'")
-                       if req:
-                             print ('Database Updated')
-                       else:
-                             print ('Failed')
-                       
-
-                       
-                       login_win.destroy()
-              Button(login_win, text="OK", command=validate, bg = 'skyblue').grid(row=7, column=0, columnspan=2, pady=30, ipadx=30)
+          def btn1nFunc():
+              tenant_dialog(controller, 1, new=True)
 
           def btn1bFunc () :
                global btnflag
@@ -189,65 +196,10 @@ class Main(Frame):
 
           ###################################################################################################################################
           def btn2Func():
-              login_win = Toplevel(app)
-              login_win.title("Login")
-              login_win.geometry("300x450")
-              
-              login_win.transient(app)
-              login_win.grab_set()
+              tenant_dialog(controller, 2)
 
-              #USERNAME
-              Label(login_win, text="USERNAME:").grid(row=0, column=0, padx=10, pady=10, sticky="e")
-              usernamevar = Entry(login_win)
-              usernamevar.grid(row=0, column=1, padx=10, pady=10)
-              #USERID
-              Label(login_win, text="USERID:").grid(row=1, column=0, padx=10, pady=10, sticky="e")
-              useridvar = Entry(login_win)
-              useridvar.grid(row=1, column=1, padx=10, pady=10)
-              #USERPASS
-              Label(login_win, text="USERPASS:").grid(row=2, column=0, padx=10, pady=10, sticky="e")
-              userpassvar = Entry(login_win)
-              userpassvar.grid(row=2, column=1, padx=10, pady=10)
-              #USERPHONE
-              Label(login_win, text="USERPHONE:").grid(row=3, column=0, padx=10, pady=10, sticky="e")
-              userphonevar = Entry(login_win)
-              userphonevar.grid(row=3, column=1, padx=10, pady=10)
-              #USERMONTH
-              Label(login_win, text="MONTH:").grid(row=4, column=0, padx=10, pady=10, sticky="e")
-              usermonthvar = Entry(login_win)
-              usermonthvar.grid(row=4, column=1, padx=10, pady=10)
-              #USERDAY
-              Label(login_win, text="DAY:").grid(row=5, column=0, padx=10, pady=10, sticky="e")
-              userdayvar = Entry(login_win)
-              userdayvar.grid(row=5, column=1, padx=10, pady=10)
-              #USERYEAR
-              Label(login_win, text="YEAR:").grid(row=6, column=0, padx=10, pady=10, sticky="e")
-              useryearvar = Entry(login_win)
-              useryearvar.grid(row=6, column=1, padx=10, pady=10)
-
-
-              def validate():
-                  namevar = usernamevar.get()
-                  idvar = useridvar.get()
-                  passvar = userpassvar.get()
-                  phonevar = userphonevar.get()
-                  monthvar = usermonthvar.get()
-                  dayvar = userdayvar.get()
-                  yearvar = useryearvar.get()
-                  datevar = str(yearvar) + "-" + str(monthvar) + "-" + str(dayvar)
-                  now = datetime.now()
-                  timenowvar = str(now.strftime("%H:%M"))
-     
-                  if namevar == "" or idvar == "" or passvar == "" or phonevar == "" or monthvar == "" or dayvar == "" or yearvar == "":
-                       messagebox.showerror("Error", "Invalid credentials")
-                  else:
-                       req = requests.get("http://localhost/cycierge/user/updateuser.php?USERID='"+str(idvar)+"'&USERPASS='"+str(passvar)+"'&USERNAME='"+str(namevar)+"'&USERPHONE='"+str(phonevar)+"'&USERDATE='"+str(datevar)+"'&USERTIME='"+str(timenowvar)+"'&ID='2'")
-                       if req:
-                             print ('Database Updated')
-                       else:
-                             print ('Failed')
-                       login_win.destroy()
-              Button(login_win, text="OK", command=validate, bg = 'skyblue').grid(row=7, column=0, columnspan=2, pady=30, ipadx=30)
+          def btn2nFunc():
+              tenant_dialog(controller, 2, new=True)
 
           def btn2bFunc () :
                global btnflag
@@ -315,17 +267,21 @@ class Main(Frame):
 
           btncanva1 = Canvas(self, bg='white')
 
-          btn1a = Button(btncanva1, text = "NEW USER", bg = 'skyblue',
+          btn1a = Button(btncanva1, text = "EDIT TENANT", bg = 'skyblue',
                         command=btn1Func)
-          btn1a.place(relx=0.17, rely=0.5, anchor='center',h=40, w=150)
+          btn1a.place(relx=0.125, rely=0.5, anchor='center',h=40, w=115)
+
+          btn1n = Button(btncanva1, text = "NEW TENANT", bg = 'skyblue',
+                        command = btn1nFunc)
+          btn1n.place(relx=0.375, rely=0.5, anchor='center',h=40, w=115)
 
           btn1b = Button(btncanva1, text = "RECORDING", bg = 'skyblue',
                         command = btn1bFunc)
-          btn1b.place(relx=0.5, rely=0.5, anchor='center',h=40, w=150)
+          btn1b.place(relx=0.625, rely=0.5, anchor='center',h=40, w=115)
 
           btn1c = Button(btncanva1, text = "UNLOCK", bg = 'skyblue',
                         command = btn1cFunc)
-          btn1c.place(relx=0.83, rely=0.5, anchor='center',h=40, w=150)
+          btn1c.place(relx=0.875, rely=0.5, anchor='center',h=40, w=115)
 
           btncanva1.place(relx=0.25, rely=0.9, anchor='center',h=80, w=500)
 
@@ -348,17 +304,21 @@ class Main(Frame):
           tbllogs2.place(relx=0.755, rely=0.65, anchor='center',h=300, w=500)
           ####
           btncanva2 = Canvas(self, bg='white')
-          btn2a = Button(btncanva2, text = "NEW USER", bg = 'skyblue',
+          btn2a = Button(btncanva2, text = "EDIT TENANT", bg = 'skyblue',
                         command = btn2Func)
-          btn2a.place(relx=0.17, rely=0.5, anchor='center',h=40, w=150)
+          btn2a.place(relx=0.125, rely=0.5, anchor='center',h=40, w=115)
+
+          btn2n = Button(btncanva2, text = "NEW TENANT", bg = 'skyblue',
+                        command = btn2nFunc)
+          btn2n.place(relx=0.375, rely=0.5, anchor='center',h=40, w=115)
 
           btn2b = Button(btncanva2, text = "RECORDING", bg = 'skyblue',
                         command = btn2bFunc)
-          btn2b.place(relx=0.5, rely=0.5, anchor='center',h=40, w=150)
+          btn2b.place(relx=0.625, rely=0.5, anchor='center',h=40, w=115)
 
           btn2c = Button(btncanva2, text = "UNLOCK", bg = 'skyblue',
                         command = btn2cFunc)
-          btn2c.place(relx=0.83, rely=0.5, anchor='center',h=40, w=150)
+          btn2c.place(relx=0.875, rely=0.5, anchor='center',h=40, w=115)
           btncanva2.place(relx=0.75, rely=0.9, anchor='center',h=80, w=500)
 
           maincanva.place(relx=0.5, rely=0.5, anchor='center',h=850, w=1400)

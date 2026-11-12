@@ -72,6 +72,25 @@ function report_stay_open(mysqli $c, int $room, string $name, string $tid, strin
     $c->prepare("INSERT INTO TBLSTAYS (ROOMID, TENANTNAME, TENANTID, CHECKIN) VALUES (?, ?, ?, ?)")->execute([$room, $name, $tid, $ci]);
 }
 
+/**
+ * New tenant checks in to $room (Pi "NEW TENANT" and Android "New tenant"): saves the tenant, sets the check-in
+ * to now (Manila, zero padded so the app's "time stayed" can parse it) and starts a new stay, ending the old one.
+ * Password is required here (unlike a plain edit). Throws only if the tenant row itself could not be saved.
+ */
+function report_new_tenant(mysqli $c, int $room, string $name, string $uid, string $pass): void {
+    $now = new DateTimeImmutable('now', new DateTimeZone(REPORT_TZ));
+    $d = $now->format('Y-m-d');
+    $t = $now->format('H:i');
+    // Make sure the outgoing tenant is in TBLSTAYS before TBLUSER is overwritten.
+    try { report_prepare($c); } catch (Throwable $e) { error_log("report_prepare: " . $e->getMessage()); }
+    $hash = password_hash($pass, PASSWORD_DEFAULT);
+    $s = $c->prepare("UPDATE TBLUSER SET USERNAME = ?, USERID = ?, USERPASS = ?, USERDATE = ?, USERTIME = ? WHERE ID = ?");
+    $s->bind_param("sssssi", $name, $uid, $hash, $d, $t, $room);
+    if (!$s->execute()) throw new RuntimeException($s->error);
+    try { report_stay_open($c, $room, $name, $uid, $d, $t); }
+    catch (Throwable $e) { error_log("report_stay_open: " . $e->getMessage()); }   // never break tenant registration
+}
+
 /** 'YYYY-M-D' or 'YYYYMMDD[...]' -> 'YYYY-MM-DD', or null if it isn't a real calendar date (never lets one bad row break a report). */
 function report_norm_date(string $s): ?string {
     if (!preg_match('/^(\d{4})-(\d{1,2})-(\d{1,2})/', trim($s), $m) && !preg_match('/^(\d{4})(\d{2})(\d{2})/', trim($s), $m)) return null;

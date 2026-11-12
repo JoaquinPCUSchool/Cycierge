@@ -213,6 +213,11 @@ object Api {
         call("/admin/api/update_user.php", JSONObject().put("room", room).put("name", name).put("userid", userid).put("password", password))
     }
 
+    /** Check a new tenant in: saves them AND restarts "time stayed" (check-in = now). Password is required. */
+    suspend fun newTenant(room: Int, name: String, userid: String, password: String) {
+        call("/admin/api/new_tenant.php", JSONObject().put("room", room).put("name", name).put("userid", userid).put("password", password))
+    }
+
     suspend fun clearLogs(room: Int) { call("/admin/api/clear_logs.php", JSONObject().put("room", room)) }
 
     /** One JPEG from cam.php (admin session cookie is sent automatically). Null if camera is down. */

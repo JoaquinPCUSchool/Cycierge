@@ -1,0 +1,565 @@
+diff --git a/Raspberry pi/Main.py b/Raspberry pi/Main.py
+index 7b1dbed..aa44da9 100644
+--- a/Raspberry pi/Main.py	
++++ b/Raspberry pi/Main.py	
+@@ -34,6 +34,71 @@ cap2 = cv2.VideoCapture(URL2)
+ 
+ 
+ 
++BASE = "http://localhost/cycierge"
++
++
++def tenant_dialog(parent, room, new=False):
++     """Tenant dialog, same fields and rules as the Android admin app.
++     Edit tenant: Name / Username / New password (blank keeps the current one).
++     New tenant : empty form, password required; check-in is set to now and "time stayed" restarts."""
++     try:
++          rows = requests.get(BASE + "/user/getdata.php", timeout=5).json()
++     except Exception as e:
++          messagebox.showerror("Error", "Couldn't load the tenant: " + str(e))
++          return
++     cur = next((r for r in rows if str(r.get("ID")) == str(room)), {})
++     old_name = (cur.get("USERNAME") or "").strip()
++
++     if new and old_name:
++          if not messagebox.askyesno("New tenant", "Room " + str(room) + " is occupied by " + old_name +
++                                     ".\nTheir stay ends now and time stayed restarts for the new tenant.\n\nContinue?"):
++               return
++
++     win = Toplevel(parent)
++     win.title("New tenant" if new else "Edit tenant")
++     win.transient(parent)
++     win.grab_set()
++     win.resizable(False, False)
++
++     name_v = StringVar(value="" if new else (cur.get("USERNAME") or ""))
++     uid_v = StringVar(value="" if new else (cur.get("USERID") or ""))
++     pass_v = StringVar()
++
++     Label(win, text=("New tenant - room no. " if new else "Edit tenant - room no. ") + str(room),
++           font=('', 16, 'bold')).grid(row=0, column=0, columnspan=2, padx=20, pady=(20, 5))
++     Label(win, text="Name of tenant:").grid(row=1, column=0, padx=10, pady=10, sticky="e")
++     name_e = Entry(win, textvariable=name_v, width=28)
++     name_e.grid(row=1, column=1, padx=10, pady=10)
++     Label(win, text="Username (tenant login):").grid(row=2, column=0, padx=10, pady=10, sticky="e")
++     Entry(win, textvariable=uid_v, width=28).grid(row=2, column=1, padx=10, pady=10)
++     Label(win, text="Password:" if new else "New password:").grid(row=3, column=0, padx=10, pady=10, sticky="e")
++     Entry(win, textvariable=pass_v, width=28, show="*").grid(row=3, column=1, padx=10, pady=10)
++     Label(win, fg="gray", text=("Check-in time is set to now; time stayed restarts at 0." if new
++                                 else "Leave the password blank to keep the current one.")
++           ).grid(row=4, column=0, columnspan=2, padx=10)
++     err = Label(win, text="", fg="red")
++     err.grid(row=5, column=0, columnspan=2, padx=10, pady=(10, 0))
++
++     def save():
++          name, uid, pw = name_v.get().strip(), uid_v.get().strip(), pass_v.get()
++          if not name or not uid or (new and not pw):
++               err.config(text="Name, username and password are required" if new else "Name and username are required")
++               return
++          try:
++               r = requests.post(BASE + ("/user/newtenant.php" if new else "/user/edituser.php"), timeout=5,
++                                 json={"room": room, "name": name, "userid": uid, "password": pw})
++               r.raise_for_status()
++          except Exception as e:
++               err.config(text="Couldn't save: " + str(e))
++               return
++          win.destroy()
++
++     Button(win, text="CHECK IN" if new else "SAVE", command=save, bg='skyblue').grid(row=6, column=0, columnspan=2, pady=(15, 5), ipadx=40)
++     Button(win, text="CANCEL", command=win.destroy).grid(row=7, column=0, columnspan=2, pady=(0, 20), ipadx=33)
++     win.bind("<Return>", lambda e: save())
++     name_e.focus_set()
++
++
+ class SampleApp(Tk):
+ 
+      def __init__(self, *args, **kwargs):
+@@ -84,68 +149,10 @@ class Main(Frame):
+           
+           #############################################################################################
+           def btn1Func():
+-              login_win = Toplevel(app)
+-              login_win.title("Login")
+-              login_win.geometry("300x450")
+-              
+-              login_win.transient(app)
+-              login_win.grab_set()
+-
+-              #USERNAME
+-              Label(login_win, text="USERNAME:").grid(row=0, column=0, padx=10, pady=10, sticky="e")
+-              usernamevar = Entry(login_win)
+-              usernamevar.grid(row=0, column=1, padx=10, pady=10)
+-              #USERID
+-              Label(login_win, text="USERID:").grid(row=1, column=0, padx=10, pady=10, sticky="e")
+-              useridvar = Entry(login_win)
+-              useridvar.grid(row=1, column=1, padx=10, pady=10)
+-              #USERPASS
+-              Label(login_win, text="USERPASS:").grid(row=2, column=0, padx=10, pady=10, sticky="e")
+-              userpassvar = Entry(login_win)
+-              userpassvar.grid(row=2, column=1, padx=10, pady=10)
+-              #USERPHONE
+-              Label(login_win, text="USERPHONE:").grid(row=3, column=0, padx=10, pady=10, sticky="e")
+-              userphonevar = Entry(login_win)
+-              userphonevar.grid(row=3, column=1, padx=10, pady=10)
+-              #USERMONTH
+-              Label(login_win, text="MONTH:").grid(row=4, column=0, padx=10, pady=10, sticky="e")
+-              usermonthvar = Entry(login_win)
+-              usermonthvar.grid(row=4, column=1, padx=10, pady=10)
+-              #USERDAY
+-              Label(login_win, text="DAY:").grid(row=5, column=0, padx=10, pady=10, sticky="e")
+-              userdayvar = Entry(login_win)
+-              userdayvar.grid(row=5, column=1, padx=10, pady=10)
+-              #USERYEAR
+-              Label(login_win, text="YEAR:").grid(row=6, column=0, padx=10, pady=10, sticky="e")
+-              useryearvar = Entry(login_win)
+-              useryearvar.grid(row=6, column=1, padx=10, pady=10)
+-
+-
+-              def validate():
+-                  namevar = usernamevar.get()
+-                  idvar = useridvar.get()
+-                  passvar = userpassvar.get()
+-                  phonevar = userphonevar.get()
+-                  monthvar = usermonthvar.get()
+-                  dayvar = userdayvar.get()
+-                  yearvar = useryearvar.get()
+-                  datevar = str(yearvar) + "-" + str(monthvar) + "-" + str(dayvar)
+-                  now = datetime.now()
+-                  timenowvar = str(now.strftime("%H:%M"))
+-     
+-                  if namevar == "" or idvar == "" or passvar == "" or phonevar == "" or monthvar == "" or dayvar == "" or yearvar == "":
+-                       messagebox.showerror("Error", "Invalid credentials")
+-                  else:
+-                       req = requests.get("http://localhost/cycierge/user/updateuser.php?USERID='"+str(idvar)+"'&USERPASS='"+str(passvar)+"'&USERNAME='"+str(namevar)+"'&USERPHONE='"+str(phonevar)+"'&USERDATE='"+str(datevar)+"'&USERTIME='"+str(timenowvar)+"'&ID='1'")
+-                       if req:
+-                             print ('Database Updated')
+-                       else:
+-                             print ('Failed')
+-                       
+-
+-                       
+-                       login_win.destroy()
+-              Button(login_win, text="OK", command=validate, bg = 'skyblue').grid(row=7, column=0, columnspan=2, pady=30, ipadx=30)
++              tenant_dialog(controller, 1)
++
++          def btn1nFunc():
++              tenant_dialog(controller, 1, new=True)
+ 
+           def btn1bFunc () :
+                global btnflag
+@@ -189,65 +196,10 @@ class Main(Frame):
+ 
+           ###################################################################################################################################
+           def btn2Func():
+-              login_win = Toplevel(app)
+-              login_win.title("Login")
+-              login_win.geometry("300x450")
+-              
+-              login_win.transient(app)
+-              login_win.grab_set()
+-
+-              #USERNAME
+-              Label(login_win, text="USERNAME:").grid(row=0, column=0, padx=10, pady=10, sticky="e")
+-              usernamevar = Entry(login_win)
+-              usernamevar.grid(row=0, column=1, padx=10, pady=10)
+-              #USERID
+-              Label(login_win, text="USERID:").grid(row=1, column=0, padx=10, pady=10, sticky="e")
+-              useridvar = Entry(login_win)
+-              useridvar.grid(row=1, column=1, padx=10, pady=10)
+-              #USERPASS
+-              Label(login_win, text="USERPASS:").grid(row=2, column=0, padx=10, pady=10, sticky="e")
+-              userpassvar = Entry(login_win)
+-              userpassvar.grid(row=2, column=1, padx=10, pady=10)
+-              #USERPHONE
+-              Label(login_win, text="USERPHONE:").grid(row=3, column=0, padx=10, pady=10, sticky="e")
+-              userphonevar = Entry(login_win)
+-              userphonevar.grid(row=3, column=1, padx=10, pady=10)
+-              #USERMONTH
+-              Label(login_win, text="MONTH:").grid(row=4, column=0, padx=10, pady=10, sticky="e")
+-              usermonthvar = Entry(login_win)
+-              usermonthvar.grid(row=4, column=1, padx=10, pady=10)
+-              #USERDAY
+-              Label(login_win, text="DAY:").grid(row=5, column=0, padx=10, pady=10, sticky="e")
+-              userdayvar = Entry(login_win)
+-              userdayvar.grid(row=5, column=1, padx=10, pady=10)
+-              #USERYEAR
+-              Label(login_win, text="YEAR:").grid(row=6, column=0, padx=10, pady=10, sticky="e")
+-              useryearvar = Entry(login_win)
+-              useryearvar.grid(row=6, column=1, padx=10, pady=10)
+-
+-
+-              def validate():
+-                  namevar = usernamevar.get()
+-                  idvar = useridvar.get()
+-                  passvar = userpassvar.get()
+-                  phonevar = userphonevar.get()
+-                  monthvar = usermonthvar.get()
+-                  dayvar = userdayvar.get()
+-                  yearvar = useryearvar.get()
+-                  datevar = str(yearvar) + "-" + str(monthvar) + "-" + str(dayvar)
+-                  now = datetime.now()
+-                  timenowvar = str(now.strftime("%H:%M"))
+-     
+-                  if namevar == "" or idvar == "" or passvar == "" or phonevar == "" or monthvar == "" or dayvar == "" or yearvar == "":
+-                       messagebox.showerror("Error", "Invalid credentials")
+-                  else:
+-                       req = requests.get("http://localhost/cycierge/user/updateuser.php?USERID='"+str(idvar)+"'&USERPASS='"+str(passvar)+"'&USERNAME='"+str(namevar)+"'&USERPHONE='"+str(phonevar)+"'&USERDATE='"+str(datevar)+"'&USERTIME='"+str(timenowvar)+"'&ID='2'")
+-                       if req:
+-                             print ('Database Updated')
+-                       else:
+-                             print ('Failed')
+-                       login_win.destroy()
+-              Button(login_win, text="OK", command=validate, bg = 'skyblue').grid(row=7, column=0, columnspan=2, pady=30, ipadx=30)
++              tenant_dialog(controller, 2)
++
++          def btn2nFunc():
++              tenant_dialog(controller, 2, new=True)
+ 
+           def btn2bFunc () :
+                global btnflag
+@@ -315,17 +267,21 @@ class Main(Frame):
+ 
+           btncanva1 = Canvas(self, bg='white')
+ 
+-          btn1a = Button(btncanva1, text = "NEW USER", bg = 'skyblue',
++          btn1a = Button(btncanva1, text = "EDIT TENANT", bg = 'skyblue',
+                         command=btn1Func)
+-          btn1a.place(relx=0.17, rely=0.5, anchor='center',h=40, w=150)
++          btn1a.place(relx=0.125, rely=0.5, anchor='center',h=40, w=115)
++
++          btn1n = Button(btncanva1, text = "NEW TENANT", bg = 'skyblue',
++                        command = btn1nFunc)
++          btn1n.place(relx=0.375, rely=0.5, anchor='center',h=40, w=115)
+ 
+           btn1b = Button(btncanva1, text = "RECORDING", bg = 'skyblue',
+                         command = btn1bFunc)
+-          btn1b.place(relx=0.5, rely=0.5, anchor='center',h=40, w=150)
++          btn1b.place(relx=0.625, rely=0.5, anchor='center',h=40, w=115)
+ 
+           btn1c = Button(btncanva1, text = "UNLOCK", bg = 'skyblue',
+                         command = btn1cFunc)
+-          btn1c.place(relx=0.83, rely=0.5, anchor='center',h=40, w=150)
++          btn1c.place(relx=0.875, rely=0.5, anchor='center',h=40, w=115)
+ 
+           btncanva1.place(relx=0.25, rely=0.9, anchor='center',h=80, w=500)
+ 
+@@ -348,17 +304,21 @@ class Main(Frame):
+           tbllogs2.place(relx=0.755, rely=0.65, anchor='center',h=300, w=500)
+           ####
+           btncanva2 = Canvas(self, bg='white')
+-          btn2a = Button(btncanva2, text = "NEW USER", bg = 'skyblue',
++          btn2a = Button(btncanva2, text = "EDIT TENANT", bg = 'skyblue',
+                         command = btn2Func)
+-          btn2a.place(relx=0.17, rely=0.5, anchor='center',h=40, w=150)
++          btn2a.place(relx=0.125, rely=0.5, anchor='center',h=40, w=115)
++
++          btn2n = Button(btncanva2, text = "NEW TENANT", bg = 'skyblue',
++                        command = btn2nFunc)
++          btn2n.place(relx=0.375, rely=0.5, anchor='center',h=40, w=115)
+ 
+           btn2b = Button(btncanva2, text = "RECORDING", bg = 'skyblue',
+                         command = btn2bFunc)
+-          btn2b.place(relx=0.5, rely=0.5, anchor='center',h=40, w=150)
++          btn2b.place(relx=0.625, rely=0.5, anchor='center',h=40, w=115)
+ 
+           btn2c = Button(btncanva2, text = "UNLOCK", bg = 'skyblue',
+                         command = btn2cFunc)
+-          btn2c.place(relx=0.83, rely=0.5, anchor='center',h=40, w=150)
++          btn2c.place(relx=0.875, rely=0.5, anchor='center',h=40, w=115)
+           btncanva2.place(relx=0.75, rely=0.9, anchor='center',h=80, w=500)
+ 
+           maincanva.place(relx=0.5, rely=0.5, anchor='center',h=850, w=1400)
+diff --git a/android-admin/app/src/main/java/com/cycierge/admin/Api.kt b/android-admin/app/src/main/java/com/cycierge/admin/Api.kt
+index 966d8a2..3194b29 100644
+--- a/android-admin/app/src/main/java/com/cycierge/admin/Api.kt
++++ b/android-admin/app/src/main/java/com/cycierge/admin/Api.kt
+@@ -213,6 +213,11 @@ object Api {
+         call("/admin/api/update_user.php", JSONObject().put("room", room).put("name", name).put("userid", userid).put("password", password))
+     }
+ 
++    /** Check a new tenant in: saves them AND restarts "time stayed" (check-in = now). Password is required. */
++    suspend fun newTenant(room: Int, name: String, userid: String, password: String) {
++        call("/admin/api/new_tenant.php", JSONObject().put("room", room).put("name", name).put("userid", userid).put("password", password))
++    }
++
+     suspend fun clearLogs(room: Int) { call("/admin/api/clear_logs.php", JSONObject().put("room", room)) }
+ 
+     /** One JPEG from cam.php (admin session cookie is sent automatically). Null if camera is down. */
+diff --git a/android-admin/app/src/main/java/com/cycierge/admin/MainActivity.kt b/android-admin/app/src/main/java/com/cycierge/admin/MainActivity.kt
+index 8e24fc5..ab9d0eb 100644
+--- a/android-admin/app/src/main/java/com/cycierge/admin/MainActivity.kt
++++ b/android-admin/app/src/main/java/com/cycierge/admin/MainActivity.kt
+@@ -69,8 +69,10 @@ fun App() {
+     var room by remember { mutableStateOf<Room?>(null) }
+     var reports by remember { mutableStateOf(false) }
+     var edit by remember { mutableStateOf<Room?>(null) }
+-    BackHandler(enabled = edit != null || room != null || reports) {
++    var newT by remember { mutableStateOf<Room?>(null) }
++    BackHandler(enabled = newT != null || edit != null || room != null || reports) {
+         when {
++            newT != null -> newT = null
+             edit != null -> edit = null
+             reports -> reports = false
+             else -> room = null
+@@ -78,13 +80,15 @@ fun App() {
+     }
+     val r = room
+     val e = edit
+-    val logout = { Api.logout(); edit = null; room = null; reports = false; loggedIn = false }
++    val n = newT
++    val logout = { Api.logout(); newT = null; edit = null; room = null; reports = false; loggedIn = false }
+     when {
+         !loggedIn -> LoginScreen { loggedIn = true }
++        n != null -> NewTenantScreen(n, onBack = { newT = null }, onLogout = logout)
+         e != null -> EditTenantScreen(e, onBack = { edit = null }, onLogout = logout)
+         reports -> ReportScreen(onBack = { reports = false }, onLogout = logout)
+-        r == null -> DashboardScreen(onOpen = { room = it }, onEdit = { edit = it }, onReports = { reports = true }, onLogout = logout)
+-        else -> RoomScreen(r, onBack = { room = null }, onEdit = { edit = it }, onLogout = logout)
++        r == null -> DashboardScreen(onOpen = { room = it }, onEdit = { edit = it }, onNew = { newT = it }, onReports = { reports = true }, onLogout = logout)
++        else -> RoomScreen(r, onBack = { room = null }, onEdit = { edit = it }, onNew = { newT = it }, onLogout = logout)
+     }
+ }
+ 
+@@ -204,9 +208,77 @@ fun EditTenantScreen(room: Room, onBack: () -> Unit, onLogout: () -> Unit) {
+     }
+ }
+ 
++// ---------------------------------------------------------------- new tenant (check-in)
++@Composable
++fun NewTenantScreen(room: Room, onBack: () -> Unit, onLogout: () -> Unit) {
++    var name by remember { mutableStateOf("") }
++    var uid by remember { mutableStateOf("") }
++    var pass by remember { mutableStateOf("") }
++    var err by remember { mutableStateOf<String?>(null) }
++    var busy by remember { mutableStateOf(false) }
++    var confirm by remember { mutableStateOf(false) }
++    val scope = rememberCoroutineScope()
++
++    val doSave: () -> Unit = {
++        busy = true; err = null
++        scope.launch {
++            try { Api.newTenant(room.id, name.trim(), uid.trim(), pass); onBack() }
++            catch (e: AuthException) { onLogout() }
++            catch (e: Exception) { err = e.message ?: "Couldn't save" }
++            busy = false
++        }
++    }
++
++    Column(Modifier.fillMaxSize()) {
++        CyTopBar(start = { RoundIcon(Ic.Back, "Back", onBack); Wordmark(20.sp) })
++        Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(18.dp)) {
++            Hero("Room no. ${room.id}", "New", "tenant")
++
++            FieldLabel("Name of tenant")
++            OutlinedTextField(name, { name = it }, singleLine = true, shape = RoundedCornerShape(12.dp),
++                colors = cyFieldColors(), modifier = Modifier.fillMaxWidth())
++            FieldLabel("Username (tenant login)")
++            OutlinedTextField(uid, { uid = it }, singleLine = true, shape = RoundedCornerShape(12.dp),
++                colors = cyFieldColors(), modifier = Modifier.fillMaxWidth())
++            FieldLabel("Password")
++            OutlinedTextField(pass, { pass = it }, singleLine = true, shape = RoundedCornerShape(12.dp),
++                colors = cyFieldColors(), visualTransformation = PasswordVisualTransformation(),
++                modifier = Modifier.fillMaxWidth())
++            Text("Check-in time is set to now and time stayed restarts at 0.", color = Cy.Mute, fontSize = 12.sp,
++                modifier = Modifier.padding(top = 6.dp))
++
++            Spacer(Modifier.height(20.dp))
++            err?.let { ErrorBox(it) }
++            ActionButton(
++                if (busy) "Saving…" else "Check in tenant", icon = Ic.Person,
++                enabled = !busy && name.isNotBlank() && uid.isNotBlank() && pass.isNotEmpty(),
++                onClick = { if (room.name.isBlank()) doSave() else confirm = true }
++            )
++            Spacer(Modifier.height(10.dp))
++            ActionButton("Cancel", onClick = onBack, style = Btn.Ghost)
++            BrandFoot()
++        }
++    }
++
++    if (confirm) {
++        AlertDialog(
++            onDismissRequest = { confirm = false },
++            containerColor = Cy.Navy2, titleContentColor = Cy.Cream, textContentColor = Cy.Mute,
++            title = { Text("Replace ${room.name}?", fontWeight = FontWeight.ExtraBold) },
++            text = { Text("Their stay in Room ${room.id} ends now and time stayed restarts for the new tenant.") },
++            confirmButton = {
++                TextButton(onClick = { confirm = false; doSave() }) {
++                    Text("Check in", color = Cy.Amber, fontWeight = FontWeight.ExtraBold)
++                }
++            },
++            dismissButton = { TextButton(onClick = { confirm = false }) { Text("Cancel", color = Cy.Mute) } }
++        )
++    }
++}
++
+ // ---------------------------------------------------------------- building dashboard
+ @Composable
+-private fun RoomCard(r: Room, tick: Int, onUnlock: () -> Unit, onOpen: () -> Unit, onEdit: () -> Unit) {
++private fun RoomCard(r: Room, tick: Int, onUnlock: () -> Unit, onOpen: () -> Unit, onEdit: () -> Unit, onNew: () -> Unit) {
+     val vacant = r.name.isBlank()
+     val stay = if (vacant) null else stayText(r.since, tick)
+     CyCard(border = if (r.unlockPending) Cy.Amber else Cy.Line) {
+@@ -247,11 +319,13 @@ private fun RoomCard(r: Room, tick: Int, onUnlock: () -> Unit, onOpen: () -> Uni
+         ActionButton("Camera & logs", onClick = onOpen, icon = Ic.Camera, style = Btn.Teal)
+         Spacer(Modifier.height(10.dp))
+         ActionButton("Edit tenant", onClick = onEdit, icon = Ic.Person, style = Btn.Ghost)
++        Spacer(Modifier.height(10.dp))
++        ActionButton("New tenant", onClick = onNew, icon = Ic.Person, style = Btn.Ghost)
+     }
+ }
+ 
+ @Composable
+-fun DashboardScreen(onOpen: (Room) -> Unit, onEdit: (Room) -> Unit, onReports: () -> Unit, onLogout: () -> Unit) {
++fun DashboardScreen(onOpen: (Room) -> Unit, onEdit: (Room) -> Unit, onNew: (Room) -> Unit, onReports: () -> Unit, onLogout: () -> Unit) {
+     var rooms by remember { mutableStateOf<List<Room>>(emptyList()) }
+     var err by remember { mutableStateOf<String?>(null) }
+     var confirm by remember { mutableStateOf<Room?>(null) }
+@@ -277,7 +351,7 @@ fun DashboardScreen(onOpen: (Room) -> Unit, onEdit: (Room) -> Unit, onReports: (
+             Hero("Admin management", "All", "rooms")
+             err?.let { ErrorBox(it) }
+             rooms.forEach { r ->
+-                RoomCard(r, tick, onUnlock = { confirm = r }, onOpen = { onOpen(r) }, onEdit = { onEdit(r) })
++                RoomCard(r, tick, onUnlock = { confirm = r }, onOpen = { onOpen(r) }, onEdit = { onEdit(r) }, onNew = { onNew(r) })
+                 Spacer(Modifier.height(14.dp))
+             }
+             CyCard(onClick = onReports) {
+@@ -336,7 +410,7 @@ private fun LogItem(l: LogRow) {
+ }
+ 
+ @Composable
+-fun RoomScreen(room: Room, onBack: () -> Unit, onEdit: (Room) -> Unit, onLogout: () -> Unit) {
++fun RoomScreen(room: Room, onBack: () -> Unit, onEdit: (Room) -> Unit, onNew: (Room) -> Unit, onLogout: () -> Unit) {
+     var cur by remember { mutableStateOf(room) }          // live copy: battery + unlock state
+     var frame by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
+     var camDown by remember { mutableStateOf(false) }
+@@ -428,6 +502,20 @@ fun RoomScreen(room: Room, onBack: () -> Unit, onEdit: (Room) -> Unit, onLogout:
+                 }
+             }
+ 
++            item {
++                CyCard(onClick = { onNew(cur) }) {
++                    Row(verticalAlignment = Alignment.CenterVertically) {
++                        IconTile(Ic.Person)
++                        Spacer(Modifier.width(14.dp))
++                        Column(Modifier.weight(1f)) {
++                            Text("New tenant", fontWeight = FontWeight.ExtraBold, fontSize = 17.sp)
++                            Text("Check in someone new · restarts time stayed", color = Cy.Mute, fontSize = 13.sp)
++                        }
++                        CyIcon(Ic.Next, tint = Cy.Mute)
++                    }
++                }
++            }
++
+             item {
+                 Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                     Text("Latest logs for this unit", fontWeight = FontWeight.ExtraBold, fontSize = 17.sp)
+diff --git a/php/cycierge/admin/api/new_tenant.php b/php/cycierge/admin/api/new_tenant.php
+new file mode 100644
+index 0000000..b16608e
+--- /dev/null
++++ b/php/cycierge/admin/api/new_tenant.php
+@@ -0,0 +1,10 @@
++<?php require __DIR__ . '/_boot.php'; need_admin();
++require_once __DIR__ . '/../../reportlib.php';
++// Android "New tenant": check a new tenant in (restarts "time stayed"). POST JSON {room, name, userid, password} - all required.
++$b = body(); $room = (int)($b['room'] ?? 0);
++$name = trim((string)($b['name'] ?? '')); $uid = trim((string)($b['userid'] ?? '')); $pass = (string)($b['password'] ?? '');
++if ($room < 1 || $name === '' || $uid === '' || $pass === '') { http_response_code(400); exit('{"error":"name, username and password are required"}'); }
++$c = db();
++try { report_new_tenant($c, $room, $name, $uid, $pass); }
++catch (Throwable $e) { error_log("new_tenant: " . $e->getMessage()); http_response_code(500); exit('{"error":"save failed"}'); }
++echo '{"ok":true}';
+diff --git a/php/cycierge/reportlib.php b/php/cycierge/reportlib.php
+index a91c715..3a9f120 100644
+--- a/php/cycierge/reportlib.php
++++ b/php/cycierge/reportlib.php
+@@ -72,6 +72,25 @@ function report_stay_open(mysqli $c, int $room, string $name, string $tid, strin
+     $c->prepare("INSERT INTO TBLSTAYS (ROOMID, TENANTNAME, TENANTID, CHECKIN) VALUES (?, ?, ?, ?)")->execute([$room, $name, $tid, $ci]);
+ }
+ 
++/**
++ * New tenant checks in to $room (Pi "NEW TENANT" and Android "New tenant"): saves the tenant, sets the check-in
++ * to now (Manila, zero padded so the app's "time stayed" can parse it) and starts a new stay, ending the old one.
++ * Password is required here (unlike a plain edit). Throws only if the tenant row itself could not be saved.
++ */
++function report_new_tenant(mysqli $c, int $room, string $name, string $uid, string $pass): void {
++    $now = new DateTimeImmutable('now', new DateTimeZone(REPORT_TZ));
++    $d = $now->format('Y-m-d');
++    $t = $now->format('H:i');
++    // Make sure the outgoing tenant is in TBLSTAYS before TBLUSER is overwritten.
++    try { report_prepare($c); } catch (Throwable $e) { error_log("report_prepare: " . $e->getMessage()); }
++    $hash = password_hash($pass, PASSWORD_DEFAULT);
++    $s = $c->prepare("UPDATE TBLUSER SET USERNAME = ?, USERID = ?, USERPASS = ?, USERDATE = ?, USERTIME = ? WHERE ID = ?");
++    $s->bind_param("sssssi", $name, $uid, $hash, $d, $t, $room);
++    if (!$s->execute()) throw new RuntimeException($s->error);
++    try { report_stay_open($c, $room, $name, $uid, $d, $t); }
++    catch (Throwable $e) { error_log("report_stay_open: " . $e->getMessage()); }   // never break tenant registration
++}
++
+ /** 'YYYY-M-D' or 'YYYYMMDD[...]' -> 'YYYY-MM-DD', or null if it isn't a real calendar date (never lets one bad row break a report). */
+ function report_norm_date(string $s): ?string {
+     if (!preg_match('/^(\d{4})-(\d{1,2})-(\d{1,2})/', trim($s), $m) && !preg_match('/^(\d{4})(\d{2})(\d{2})/', trim($s), $m)) return null;
+diff --git a/php/cycierge/user/edituser.php b/php/cycierge/user/edituser.php
+new file mode 100644
+index 0000000..ea81e96
+--- /dev/null
++++ b/php/cycierge/user/edituser.php
+@@ -0,0 +1,30 @@
++<?php
++// Pi dashboard "Edit tenant". Same rules as admin/api/update_user.php (Android admin app):
++// name + username are saved, the password only changes when a new one is sent.
++// Loopback only (like admin/getreport.php); POST JSON {room, name, userid, password}.
++require_once __DIR__ . '/../reportlib.php';   // db(), report_local_only()
++report_local_only();
++header('Content-Type: application/json');
++
++$b    = json_decode(file_get_contents('php://input'), true) ?: [];
++$room = (int)($b['room'] ?? 0);
++$name = trim((string)($b['name'] ?? ''));
++$uid  = trim((string)($b['userid'] ?? ''));
++$pass = (string)($b['password'] ?? '');
++
++if ($room < 1 || $name === '' || $uid === '') {
++    http_response_code(400);
++    exit('{"error":"name and username are required"}');
++}
++
++$hash = ($pass === '') ? null : password_hash($pass, PASSWORD_DEFAULT);
++$c = db();
++$s = $c->prepare("UPDATE TBLUSER SET USERNAME = ?, USERID = ?, USERPASS = COALESCE(?, USERPASS) WHERE ID = ?");
++$s->bind_param("sssi", $name, $uid, $hash, $room);
++if (!$s->execute()) {
++    error_log("edituser: " . $s->error);
++    http_response_code(500);
++    exit('{"error":"save failed"}');
++}
++echo '{"ok":true}';
++$c->close();
+diff --git a/php/cycierge/user/newtenant.php b/php/cycierge/user/newtenant.php
+new file mode 100644
+index 0000000..d231c89
+--- /dev/null
++++ b/php/cycierge/user/newtenant.php
+@@ -0,0 +1,22 @@
++<?php
++// Pi dashboard "New tenant": check a new tenant in (restarts "time stayed"). Loopback only.
++// POST JSON {room, name, userid, password} - all required.
++require_once __DIR__ . '/../reportlib.php';   // db(), report_local_only(), report_new_tenant()
++report_local_only();
++header('Content-Type: application/json');
++
++$b    = json_decode(file_get_contents('php://input'), true) ?: [];
++$room = (int)($b['room'] ?? 0);
++$name = trim((string)($b['name'] ?? ''));
++$uid  = trim((string)($b['userid'] ?? ''));
++$pass = (string)($b['password'] ?? '');
++
++if ($room < 1 || $name === '' || $uid === '' || $pass === '') {
++    http_response_code(400);
++    exit('{"error":"name, username and password are required"}');
++}
++$c = db();
++try { report_new_tenant($c, $room, $name, $uid, $pass); }
++catch (Throwable $e) { error_log("newtenant: " . $e->getMessage()); http_response_code(500); exit('{"error":"save failed"}'); }
++echo '{"ok":true}';
++$c->close();

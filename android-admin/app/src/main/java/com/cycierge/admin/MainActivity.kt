@@ -69,8 +69,10 @@ fun App() {
     var room by remember { mutableStateOf<Room?>(null) }
     var reports by remember { mutableStateOf(false) }
     var edit by remember { mutableStateOf<Room?>(null) }
-    BackHandler(enabled = edit != null || room != null || reports) {
+    var newT by remember { mutableStateOf<Room?>(null) }
+    BackHandler(enabled = newT != null || edit != null || room != null || reports) {
         when {
+            newT != null -> newT = null
             edit != null -> edit = null
             reports -> reports = false
             else -> room = null
@@ -78,13 +80,15 @@ fun App() {
     }
     val r = room
     val e = edit
-    val logout = { Api.logout(); edit = null; room = null; reports = false; loggedIn = false }
+    val n = newT
+    val logout = { Api.logout(); newT = null; edit = null; room = null; reports = false; loggedIn = false }
     when {
         !loggedIn -> LoginScreen { loggedIn = true }
+        n != null -> NewTenantScreen(n, onBack = { newT = null }, onLogout = logout)
         e != null -> EditTenantScreen(e, onBack = { edit = null }, onLogout = logout)
         reports -> ReportScreen(onBack = { reports = false }, onLogout = logout)
-        r == null -> DashboardScreen(onOpen = { room = it }, onEdit = { edit = it }, onReports = { reports = true }, onLogout = logout)
-        else -> RoomScreen(r, onBack = { room = null }, onEdit = { edit = it }, onLogout = logout)
+        r == null -> DashboardScreen(onOpen = { room = it }, onEdit = { edit = it }, onNew = { newT = it }, onReports = { reports = true }, onLogout = logout)
+        else -> RoomScreen(r, onBack = { room = null }, onEdit = { edit = it }, onNew = { newT = it }, onLogout = logout)
     }
 }
 
@@ -204,9 +208,77 @@ fun EditTenantScreen(room: Room, onBack: () -> Unit, onLogout: () -> Unit) {
     }
 }
 
+// ---------------------------------------------------------------- new tenant (check-in)
+@Composable
+fun NewTenantScreen(room: Room, onBack: () -> Unit, onLogout: () -> Unit) {
+    var name by remember { mutableStateOf("") }
+    var uid by remember { mutableStateOf("") }
+    var pass by remember { mutableStateOf("") }
+    var err by remember { mutableStateOf<String?>(null) }
+    var busy by remember { mutableStateOf(false) }
+    var confirm by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+
+    val doSave: () -> Unit = {
+        busy = true; err = null
+        scope.launch {
+            try { Api.newTenant(room.id, name.trim(), uid.trim(), pass); onBack() }
+            catch (e: AuthException) { onLogout() }
+            catch (e: Exception) { err = e.message ?: "Couldn't save" }
+            busy = false
+        }
+    }
+
+    Column(Modifier.fillMaxSize()) {
+        CyTopBar(start = { RoundIcon(Ic.Back, "Back", onBack); Wordmark(20.sp) })
+        Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(18.dp)) {
+            Hero("Room no. ${room.id}", "New", "tenant")
+
+            FieldLabel("Name of tenant")
+            OutlinedTextField(name, { name = it }, singleLine = true, shape = RoundedCornerShape(12.dp),
+                colors = cyFieldColors(), modifier = Modifier.fillMaxWidth())
+            FieldLabel("Username (tenant login)")
+            OutlinedTextField(uid, { uid = it }, singleLine = true, shape = RoundedCornerShape(12.dp),
+                colors = cyFieldColors(), modifier = Modifier.fillMaxWidth())
+            FieldLabel("Password")
+            OutlinedTextField(pass, { pass = it }, singleLine = true, shape = RoundedCornerShape(12.dp),
+                colors = cyFieldColors(), visualTransformation = PasswordVisualTransformation(),
+                modifier = Modifier.fillMaxWidth())
+            Text("Check-in time is set to now and time stayed restarts at 0.", color = Cy.Mute, fontSize = 12.sp,
+                modifier = Modifier.padding(top = 6.dp))
+
+            Spacer(Modifier.height(20.dp))
+            err?.let { ErrorBox(it) }
+            ActionButton(
+                if (busy) "Saving…" else "Check in tenant", icon = Ic.Person,
+                enabled = !busy && name.isNotBlank() && uid.isNotBlank() && pass.isNotEmpty(),
+                onClick = { if (room.name.isBlank()) doSave() else confirm = true }
+            )
+            Spacer(Modifier.height(10.dp))
+            ActionButton("Cancel", onClick = onBack, style = Btn.Ghost)
+            BrandFoot()
+        }
+    }
+
+    if (confirm) {
+        AlertDialog(
+            onDismissRequest = { confirm = false },
+            containerColor = Cy.Navy2, titleContentColor = Cy.Cream, textContentColor = Cy.Mute,
+            title = { Text("Replace ${room.name}?", fontWeight = FontWeight.ExtraBold) },
+            text = { Text("Their stay in Room ${room.id} ends now and time stayed restarts for the new tenant.") },
+            confirmButton = {
+                TextButton(onClick = { confirm = false; doSave() }) {
+                    Text("Check in", color = Cy.Amber, fontWeight = FontWeight.ExtraBold)
+                }
+            },
+            dismissButton = { TextButton(onClick = { confirm = false }) { Text("Cancel", color = Cy.Mute) } }
+        )
+    }
+}
+
 // ---------------------------------------------------------------- building dashboard
 @Composable
-private fun RoomCard(r: Room, tick: Int, onUnlock: () -> Unit, onOpen: () -> Unit, onEdit: () -> Unit) {
+private fun RoomCard(r: Room, tick: Int, onUnlock: () -> Unit, onOpen: () -> Unit, onEdit: () -> Unit, onNew: () -> Unit) {
     val vacant = r.name.isBlank()
     val stay = if (vacant) null else stayText(r.since, tick)
     CyCard(border = if (r.unlockPending) Cy.Amber else Cy.Line) {
@@ -247,11 +319,13 @@ private fun RoomCard(r: Room, tick: Int, onUnlock: () -> Unit, onOpen: () -> Uni
         ActionButton("Camera & logs", onClick = onOpen, icon = Ic.Camera, style = Btn.Teal)
         Spacer(Modifier.height(10.dp))
         ActionButton("Edit tenant", onClick = onEdit, icon = Ic.Person, style = Btn.Ghost)
+        Spacer(Modifier.height(10.dp))
+        ActionButton("New tenant", onClick = onNew, icon = Ic.Person, style = Btn.Ghost)
     }
 }
 
 @Composable
-fun DashboardScreen(onOpen: (Room) -> Unit, onEdit: (Room) -> Unit, onReports: () -> Unit, onLogout: () -> Unit) {
+fun DashboardScreen(onOpen: (Room) -> Unit, onEdit: (Room) -> Unit, onNew: (Room) -> Unit, onReports: () -> Unit, onLogout: () -> Unit) {
     var rooms by remember { mutableStateOf<List<Room>>(emptyList()) }
     var err by remember { mutableStateOf<String?>(null) }
     var confirm by remember { mutableStateOf<Room?>(null) }
@@ -277,7 +351,7 @@ fun DashboardScreen(onOpen: (Room) -> Unit, onEdit: (Room) -> Unit, onReports: (
             Hero("Admin management", "All", "rooms")
             err?.let { ErrorBox(it) }
             rooms.forEach { r ->
-                RoomCard(r, tick, onUnlock = { confirm = r }, onOpen = { onOpen(r) }, onEdit = { onEdit(r) })
+                RoomCard(r, tick, onUnlock = { confirm = r }, onOpen = { onOpen(r) }, onEdit = { onEdit(r) }, onNew = { onNew(r) })
                 Spacer(Modifier.height(14.dp))
             }
             CyCard(onClick = onReports) {
@@ -336,7 +410,7 @@ private fun LogItem(l: LogRow) {
 }
 
 @Composable
-fun RoomScreen(room: Room, onBack: () -> Unit, onEdit: (Room) -> Unit, onLogout: () -> Unit) {
+fun RoomScreen(room: Room, onBack: () -> Unit, onEdit: (Room) -> Unit, onNew: (Room) -> Unit, onLogout: () -> Unit) {
     var cur by remember { mutableStateOf(room) }          // live copy: battery + unlock state
     var frame by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
     var camDown by remember { mutableStateOf(false) }
@@ -422,6 +496,20 @@ fun RoomScreen(room: Room, onBack: () -> Unit, onEdit: (Room) -> Unit, onLogout:
                         Column(Modifier.weight(1f)) {
                             Text("Edit tenant", fontWeight = FontWeight.ExtraBold, fontSize = 17.sp)
                             Text("Name, username & password", color = Cy.Mute, fontSize = 13.sp)
+                        }
+                        CyIcon(Ic.Next, tint = Cy.Mute)
+                    }
+                }
+            }
+
+            item {
+                CyCard(onClick = { onNew(cur) }) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        IconTile(Ic.Person)
+                        Spacer(Modifier.width(14.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text("New tenant", fontWeight = FontWeight.ExtraBold, fontSize = 17.sp)
+                            Text("Check in someone new · restarts time stayed", color = Cy.Mute, fontSize = 13.sp)
                         }
                         CyIcon(Ic.Next, tint = Cy.Mute)
                     }
