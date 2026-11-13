@@ -3,6 +3,7 @@ package com.cycierge.admin
 import android.net.ConnectivityManager
 import android.net.Network
 import android.os.Bundle
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
@@ -23,6 +24,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
@@ -70,12 +72,14 @@ fun App() {
     var loggedIn by remember { mutableStateOf(false) }
     var room by remember { mutableStateOf<Room?>(null) }
     var reports by remember { mutableStateOf(false) }
+    var account by remember { mutableStateOf(false) }
     var edit by remember { mutableStateOf<Room?>(null) }
     var newT by remember { mutableStateOf<Room?>(null) }
-    BackHandler(enabled = newT != null || edit != null || room != null || reports) {
+    BackHandler(enabled = newT != null || edit != null || room != null || reports || account) {
         when {
             newT != null -> newT = null
             edit != null -> edit = null
+            account -> account = false
             reports -> reports = false
             else -> room = null
         }
@@ -83,13 +87,14 @@ fun App() {
     val r = room
     val e = edit
     val n = newT
-    val logout = { Api.logout(); newT = null; edit = null; room = null; reports = false; loggedIn = false }
+    val logout = { Api.logout(); newT = null; edit = null; room = null; reports = false; account = false; loggedIn = false }
     when {
         !loggedIn -> LoginScreen { loggedIn = true }
         n != null -> NewTenantScreen(n, onBack = { newT = null }, onLogout = logout)
         e != null -> EditTenantScreen(e, onBack = { edit = null }, onLogout = logout)
+        account -> AccountScreen(onBack = { account = false }, onLogout = logout)
         reports -> ReportScreen(onBack = { reports = false }, onLogout = logout)
-        r == null -> DashboardScreen(onOpen = { room = it }, onEdit = { edit = it }, onNew = { newT = it }, onReports = { reports = true }, onLogout = logout)
+        r == null -> DashboardScreen(onOpen = { room = it }, onEdit = { edit = it }, onNew = { newT = it }, onReports = { reports = true }, onAccount = { account = true }, onLogout = logout)
         else -> RoomScreen(r, onBack = { room = null }, onEdit = { edit = it }, onNew = { newT = it }, onLogout = logout)
     }
 }
@@ -245,6 +250,97 @@ fun EditTenantScreen(room: Room, onBack: () -> Unit, onLogout: () -> Unit) {
     }
 }
 
+// ---------------------------------------------------------------- change admin login
+private fun accountError(e: ApiError): String = when (e.key) {
+    "wrong_password" -> "Current password is wrong."
+    "blocked" -> "Too many failed attempts. Try again in 10 minutes."
+    "bad_username" -> "Username must be 3-32 characters: letters, numbers, dot, dash or underscore."
+    "weak_password" -> "New password must be at least 8 characters."
+    "password_too_long" -> "New password is too long (72 characters max)."
+    "same_password" -> "New password must be different from the current one."
+    "nothing_to_change" -> "Nothing to change."
+    else -> e.message ?: "Couldn't save"
+}
+
+@Composable
+fun AccountScreen(onBack: () -> Unit, onLogout: () -> Unit) {
+    val ctx = LocalContext.current
+    val oldUser = remember { Api.currentUser() }
+    var cur by remember { mutableStateOf("") }
+    var newUser by remember { mutableStateOf(oldUser) }
+    var newPass by remember { mutableStateOf("") }
+    var again by remember { mutableStateOf("") }
+    var err by remember { mutableStateOf<String?>(null) }
+    var busy by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+
+    val userOk = Regex("[A-Za-z0-9_.-]{3,32}").matches(newUser.trim())
+    val passLenOk = newPass.isEmpty() || newPass.length >= 8
+    val passMatch = newPass == again
+    val changed = newUser.trim() != oldUser || newPass.isNotEmpty()
+    val canSave = !busy && cur.isNotEmpty() && userOk && passLenOk && passMatch && changed
+
+    Column(Modifier.fillMaxSize()) {
+        CyTopBar(start = { RoundIcon(Ic.Back, "Back", onBack); Wordmark(20.sp) })
+        Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(18.dp)) {
+            Hero("Security", "Admin", "login")
+
+            FieldLabel("Current password")
+            OutlinedTextField(cur, { cur = it }, singleLine = true, shape = RoundedCornerShape(12.dp),
+                colors = cyFieldColors(), visualTransformation = PasswordVisualTransformation(),
+                modifier = Modifier.fillMaxWidth())
+
+            FieldLabel("Username")
+            OutlinedTextField(newUser, { newUser = it }, singleLine = true, shape = RoundedCornerShape(12.dp),
+                colors = cyFieldColors(), modifier = Modifier.fillMaxWidth())
+            if (!userOk) Text("3-32 characters: letters, numbers, . _ -", color = Cy.Low, fontSize = 12.sp,
+                modifier = Modifier.padding(top = 6.dp))
+
+            FieldLabel("New password")
+            OutlinedTextField(newPass, { newPass = it }, singleLine = true, shape = RoundedCornerShape(12.dp),
+                colors = cyFieldColors(), visualTransformation = PasswordVisualTransformation(),
+                modifier = Modifier.fillMaxWidth())
+            if (!passLenOk) Text("At least 8 characters.", color = Cy.Low, fontSize = 12.sp,
+                modifier = Modifier.padding(top = 6.dp))
+            else Text("Leave blank to keep the current password.", color = Cy.Mute, fontSize = 12.sp,
+                modifier = Modifier.padding(top = 6.dp))
+
+            FieldLabel("Confirm new password")
+            OutlinedTextField(again, { again = it }, singleLine = true, shape = RoundedCornerShape(12.dp),
+                colors = cyFieldColors(), visualTransformation = PasswordVisualTransformation(),
+                modifier = Modifier.fillMaxWidth())
+            if (!passMatch) Text("Passwords don't match.", color = Cy.Low, fontSize = 12.sp,
+                modifier = Modifier.padding(top = 6.dp))
+
+            Text("This also changes the web admin login. Other phones and browsers signed in as admin will be signed out.",
+                color = Cy.Mute, fontSize = 12.sp, modifier = Modifier.padding(top = 14.dp))
+
+            Spacer(Modifier.height(20.dp))
+            err?.let { ErrorBox(it) }
+            ActionButton(
+                if (busy) "Saving…" else "Save", icon = Ic.Shield, enabled = canSave,
+                onClick = {
+                    busy = true; err = null
+                    scope.launch {
+                        try {
+                            Api.changeCredentials(cur, newUser.trim(), newPass)
+                            Toast.makeText(ctx, "Admin login updated", Toast.LENGTH_LONG).show()
+                            onBack()
+                        }
+                        catch (e: AuthException) { onLogout() }
+                        catch (e: ApiError) { err = accountError(e) }
+                        catch (e: Exception) { err = e.message ?: "Couldn't save" }
+                        busy = false
+                    }
+                }
+            )
+            Spacer(Modifier.height(10.dp))
+            ActionButton("Cancel", onClick = onBack, style = Btn.Ghost)
+            BrandFoot()
+        }
+    }
+}
+
 // ---------------------------------------------------------------- new tenant (check-in)
 @Composable
 fun NewTenantScreen(room: Room, onBack: () -> Unit, onLogout: () -> Unit) {
@@ -362,7 +458,7 @@ private fun RoomCard(r: Room, tick: Int, onUnlock: () -> Unit, onOpen: () -> Uni
 }
 
 @Composable
-fun DashboardScreen(onOpen: (Room) -> Unit, onEdit: (Room) -> Unit, onNew: (Room) -> Unit, onReports: () -> Unit, onLogout: () -> Unit) {
+fun DashboardScreen(onOpen: (Room) -> Unit, onEdit: (Room) -> Unit, onNew: (Room) -> Unit, onReports: () -> Unit, onAccount: () -> Unit, onLogout: () -> Unit) {
     var rooms by remember { mutableStateOf<List<Room>>(emptyList()) }
     var err by remember { mutableStateOf<String?>(null) }
     var confirm by remember { mutableStateOf<Room?>(null) }
@@ -400,6 +496,18 @@ fun DashboardScreen(onOpen: (Room) -> Unit, onEdit: (Room) -> Unit, onNew: (Room
                     Column(Modifier.weight(1f)) {
                         Text("Reports", fontWeight = FontWeight.ExtraBold, fontSize = 17.sp)
                         Text("Occupancy, unlocks & detections", color = Cy.Mute, fontSize = 13.sp)
+                    }
+                    CyIcon(Ic.Next, tint = Cy.Mute)
+                }
+            }
+            Spacer(Modifier.height(14.dp))
+            CyCard(onClick = onAccount) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconTile(Ic.Shield)
+                    Spacer(Modifier.width(14.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text("Admin login", fontWeight = FontWeight.ExtraBold, fontSize = 17.sp)
+                        Text("Change username or password", color = Cy.Mute, fontSize = 13.sp)
                     }
                     CyIcon(Ic.Next, tint = Cy.Mute)
                 }

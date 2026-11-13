@@ -1,11 +1,12 @@
 <?php
 // Snapshot proxy: serves one JPEG from a camera board, only to logged-in users.
 require_once '/etc/cycierge/config.php';
+require_once __DIR__ . '/lib.php';
 session_start();
 $room = is_string($_GET['room'] ?? null) ? $_GET['room'] : '';
 $who  = is_string($_GET['who'] ?? null) ? $_GET['who'] : '';
 $ok = false;
-if (!empty($_SESSION['adminid']) && $who === 'admin') {
+if ($who === 'admin' && admin_session_ok()) {
     $ok = true;
 } elseif (!empty($_SESSION['userid']) && $who === 'tenant' && ($_SESSION['usernum'] ?? '') === $room) {
     $ok = true;

@@ -29,6 +29,8 @@ data class Room(
 )
 data class LogRow(val date: String, val time: String, val activity: String)
 class AuthException : Exception("Session expired")
+/** Non-2xx answer from the Pi. [key] is the "error" field of its JSON body (e.g. "wrong_password"), or "". */
+class ApiError(val code: Int, val key: String, msg: String) : IOException(msg)
 
 data class ReportBucket(val label: String, val unlocks: Int, val detections: Int, val occupiedDays: Int)
 data class ReportRoom(
@@ -147,6 +149,9 @@ object Api {
         } catch (e: IOException) { base = null; throw e }
     }
 
+    /** Username of the current admin session (shown as the default in the change-login screen). */
+    fun currentUser(): String = creds?.first.orEmpty()
+
     fun logout() { creds = null; synchronized(store) { store.clear() } }
 
     private suspend fun call(path: String, body: JSONObject? = null, retry: Boolean = true): String =
@@ -161,10 +166,14 @@ object Api {
                         if (retry && c != null && login(c.first, c.second)) return@withContext call(path, body, false)
                         throw AuthException()
                     }
-                    if (!r.isSuccessful) throw IOException("HTTP ${r.code} on $path")
+                    if (!r.isSuccessful) {
+                        val key = runCatching { JSONObject(r.body?.string().orEmpty()).optString("error") }.getOrNull().orEmpty()
+                        throw ApiError(r.code, key, "HTTP ${r.code} on $path")
+                    }
                     r.body!!.string()
                 }
-            } catch (e: IOException) { base = null; throw e }
+            } catch (e: ApiError) { if (e.code >= 500) base = null; throw e }   // 4xx = Pi answered, route is fine
+            catch (e: IOException) { base = null; throw e }
         }
 
     suspend fun rooms(): List<Room> {
@@ -229,6 +238,17 @@ object Api {
     /** Check a new tenant in: saves them AND restarts "time stayed" (check-in = now). Password is required. */
     suspend fun newTenant(room: Int, name: String, userid: String, password: String) {
         call("/admin/api/new_tenant.php", JSONObject().put("room", room).put("name", name).put("userid", userid).put("password", password))
+    }
+
+    /**
+     * Change the admin login. Blank [newUser] keeps the username, blank [newPass] keeps the password.
+     * The Pi re-checks [current] first. On success the remembered credentials are updated too, so the
+     * silent re-login after a LAN <-> Tailscale switch keeps working.
+     */
+    suspend fun changeCredentials(current: String, newUser: String, newPass: String) {
+        call("/admin/api/change_credentials.php",
+            JSONObject().put("current_password", current).put("new_username", newUser).put("new_password", newPass))
+        creds = newUser.ifBlank { creds?.first.orEmpty() } to newPass.ifEmpty { current }
     }
 
     suspend fun clearLogs(room: Int) { call("/admin/api/clear_logs.php", JSONObject().put("room", room)) }
